@@ -36,7 +36,7 @@ def main():
 
         # (5) Postprocessing
         # (6) Export as MusicXML
-        output_file = "ordered_licks_optm_output.xml"
+        output_file = "solutions/ordered_licks_optm_output.xml"
         XML_optm_licks_file = post_process(file_paths_for_the_ordered_licks_in_the_solution, output_file)
 
         print(f"Merged MusicXML written to {XML_optm_licks_file}")
