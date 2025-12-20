@@ -1,7 +1,8 @@
 ````md
 # MusicXML Lick Sequencing with Integer Programming
 
-This project generates a **MusicXML solo** by selecting and ordering short MusicXML “licks” from a dataset.  
+This project generates a MusicXML solo by selecting and ordering short MusicXML “licks” from a dataset aiming for the optimal solo generation according to previously defined criteria encounterd in the research paper from Cunha, Subramanian e Herremans (2018).
+
 Pipeline:
 
 1. **Sample** a subset of licks from a dataset folder tree
