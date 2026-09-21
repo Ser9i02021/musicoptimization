@@ -1,22 +1,39 @@
-````md
 # MusicXML Lick Sequencing with Integer Programming
 
-This project generates a MusicXML solo by selecting and ordering short MusicXML “licks” from a dataset aiming for the optimal solo generation according to previously defined criteria encounterd in the research paper from Cunha, Subramanian e Herremans (2018).
+This project generates 12-bar blues guitar solos by selecting and ordering short MusicXML “licks” with a mixed-integer linear programming (MILP) model.
 
-Pipeline:
+The implementation is based on the optimization framework investigated by Cunha, Subramanian, and Herremans (2018). Candidate licks are represented as vertices in a directed graph, transitions between licks receive rule-based costs, and the optimization model searches for a minimum-cost sequence satisfying musical and structural constraints.
 
-1. **Sample** a subset of licks from a dataset folder tree
-2. **Parse & classify** each lick (C1–C9) using its first/last note (or rest)
-3. Build a **transition cost matrix** (rule-based heuristics)
-4. Solve an **Integer Programming** model (PuLP) to pick and order licks subject to constraints
-5. **Merge** the chosen MusicXML files into one final MusicXML output
+The main pipeline is:
+
+1. **Sample** a feasible candidate set of licks from the dataset
+2. **Parse and classify** each lick into categories C1–C9
+3. Build a **transition cost matrix**
+4. Build and solve a **MILP**
+5. Iteratively eliminate disconnected **subtours**
+6. Recover the ordered sequence of actual licks
+7. Optionally **merge** the selected MusicXML files into a final MusicXML solo
 
 ---
 
 ## What you get
 
-- ✅ A merged MusicXML file (the generated solo), written to `solutions/ordered_licks_optm_output.xml`
-- ✅ A `.pkl` file storing the sampled licks, chosen ordering, objective value, subtour count, and runtime
+Depending on the runner being used, the project can produce:
+
+- ✅ An ordered 12-bar sequence of MusicXML licks
+- ✅ A merged MusicXML solo
+- ✅ `.pkl` checkpoints containing the sampled candidate set and optimization results
+- ✅ Objective value
+- ✅ Number of subtours eliminated
+- ✅ Optimization runtime
+- ✅ Run status (`OK`, `TIMEOUT`, or `ERROR`)
+- ✅ CSV and text/LaTeX summaries for simulation experiments
+
+The standard MusicXML output is written under:
+
+```text
+solutions/
+```
 
 ---
 
@@ -27,20 +44,23 @@ Pipeline:
   - `numpy`
   - `lxml`
   - `pulp`
+  - `pandas` for the experiment/simulation scripts
 
-Install:
+Install with:
 
 ```bash
-pip install numpy lxml pulp
-````
+pip install numpy lxml pulp pandas
+```
+
+The optimization experiments use CBC through PuLP.
 
 ---
 
 ## Expected dataset structure
 
-The code expects a dataset folder called `licks_dataset_sampling/` with (at minimum) the following structure:
+The code expects a dataset folder called `licks_dataset_sampling/` with at least the following structure:
 
-```
+```text
 licks_dataset_sampling/
   FMS/
     regular/
@@ -63,206 +83,674 @@ licks_dataset_sampling/
 solutions/
 ```
 
-Each leaf folder contains **MusicXML `.xml`** lick files.
+Each leaf folder contains MusicXML `.xml` lick files.
 
-> Note: the folder name used in the code is `FMS` (even though some variables are named `FSM_*`).
+The speed/profile convention used by the selector is:
+
+```text
+SMF = 0  -> Slow
+SMF = 1  -> Moderate
+SMF = 2  -> Fast
+```
+
+Turnaround folders are not speed-specific and are therefore available to all three profiles.
 
 ---
 
-## How to run
+## Lick representation
 
-Run the full pipeline:
+Each MusicXML file is classified by `lick_classification()` and represented internally as:
+
+```python
+[first_note, last_note, classes, duration_in_bars, file_path]
+```
+
+The classes are:
+
+- **C1**: repetition
+- **C2**: ends with a rest of duration ≤ 1 beat
+- **C3**: ends with a rest of duration > 1 beat
+- **C4**: ends with a rest of duration > 2 beats
+- **C5**: starts with a rest of duration ≤ 1 beat
+- **C6**: starts with a rest of duration > 1 beat
+- **C7**: starts with a rest of duration > 2 beats
+- **C8**: turnaround
+- **C9**: regular
+
+A lick can belong to more than one category. For example, a turnaround can also be pause-related.
+
+### Duration
+
+The current model assumes:
+
+```text
+C8 turnaround -> 2 bars
+all other licks -> 1 bar
+```
+
+Therefore, a 12-bar solution containing exactly one turnaround consists of:
+
+```text
+10 one-bar licks + 1 two-bar turnaround = 12 bars
+```
+
+or 11 actual licks in total.
+
+---
+
+## `label_chosen_licks.py` — sampling and classification
+
+### `select_N_lick_samples(n, SMF)`
+
+The selector constructs a candidate set of exactly `n` **actual musical licks**.
+
+There are no longer any sampled licks reserved as artificial first or last nodes. Start and end conditions are handled inside the optimization model using separate dummy nodes.
+
+The candidate pool contains the relevant Slow, Moderate, or Fast licks together with the turnaround folders.
+
+Sampling is performed without replacement.
+
+Because arbitrary random candidate sets can occasionally make the MILP structurally infeasible, the selector performs feasibility-aware rejection sampling:
+
+1. draw a candidate set of size `n`;
+2. test whether the set is capable of satisfying the fixed structural constraints;
+3. accept it if feasible;
+4. otherwise redraw another set of size `n`.
+
+The feasibility test accounts for:
+
+- total duration of 12 bars;
+- exactly one turnaround;
+- at most one repetition lick;
+- at most three pause-related licks;
+- overlaps among lick categories.
+
+Thus the experiment samples uniformly from candidate sets **conditional on structural feasibility**.
+
+This prevents candidate-generation artifacts from being confused with optimization failures.
+
+### `lick_classification()`
+
+The classifier parses the MusicXML file and determines:
+
+- first note/rest;
+- last note/rest;
+- C1–C9 membership;
+- duration in bars;
+- original file path.
+
+---
+
+## `cost_matrix_construction.py` — transition scoring
+
+The transition-cost matrix contains the cost of placing lick `j` immediately after lick `i`.
+
+```python
+p[i][j]
+```
+
+Costs are assigned according to the transition rules implemented in the project.
+
+Important interpretation:
+
+- lower cost is better;
+- negative values represent favorable transitions under the scoring system;
+- the optimization therefore **minimizes** total transition cost.
+
+Diagonal/self-transitions are not used as valid musical transitions.
+
+---
+
+## `optimization.py` — MILP formulation
+
+The optimization model searches for a single ordered sequence of actual licks.
+
+### Dummy source and sink
+
+Two additional vertices are created internally:
+
+```text
+source -> selected musical licks -> sink
+```
+
+These are **dummy boundary nodes**.
+
+They:
+
+- do not correspond to MusicXML files;
+- have no musical duration;
+- are not part of the sampled candidate set;
+- are not returned in the final musical sequence;
+- are not exported to MusicXML.
+
+If `L` candidate licks are sampled, all `L` remain genuine candidate musical licks.
+
+---
+
+## Decision variables
+
+For actual candidate lick `i`:
+
+```text
+y[i] = 1 if lick i is selected
+```
+
+For permitted directed arcs:
+
+```text
+x[i,j] = 1 if arc i -> j is selected
+```
+
+The graph also contains arcs involving the dummy source and sink for path construction.
+
+---
+
+## Objective
+
+The model minimizes total transition cost:
+
+```text
+min Σ p[i][j] x[i,j]
+```
+
+Only transitions between actual musical licks contribute musical transition cost. Dummy boundary arcs do not represent lick-to-lick musical transitions.
+
+Lower objective values indicate better solutions under the implemented cost system.
+
+---
+
+## Main structural constraints
+
+### Single path
+
+The dummy source has exactly one outgoing arc:
+
+```text
+source -> first actual lick
+```
+
+The dummy sink has exactly one incoming arc:
+
+```text
+last actual lick -> sink
+```
+
+Selected actual licks have matching incoming and outgoing flow.
+
+---
+
+### Fixed 12-bar duration
+
+For experiments on 12-bar blues:
+
+```text
+b = 12
+```
+
+and the model enforces:
+
+```text
+Σ duration[i] * y[i] = 12
+```
+
+All actual selected licks are included in this duration calculation.
+
+---
+
+### Repetition limit
+
+At most one selected lick can belong to C1:
+
+```text
+number of repetition licks <= 1
+```
+
+---
+
+### Pause-related limit
+
+At most three selected licks may belong to C2–C7:
+
+```text
+number of pause-related licks <= 3
+```
+
+Pause detection uses:
+
+```python
+any(
+    code in licks_list[i][2]
+    for code in ("C2", "C3", "C4", "C5", "C6", "C7")
+)
+```
+
+---
+
+### Exactly one turnaround
+
+The model explicitly requires:
+
+```text
+number of selected C8 licks = 1
+```
+
+The unique turnaround must also be the final actual musical lick:
+
+```text
+turnaround -> dummy sink
+```
+
+The first actual lick cannot be a turnaround.
+
+Consequently, with `b = 12`, a feasible final solo normally contains:
+
+```text
+10 one-bar non-turnaround licks
++
+1 two-bar turnaround
+=
+12 bars
+```
+
+---
+
+## Subtour elimination
+
+Flow constraints alone can produce disconnected cycles in addition to the source-to-sink path.
+
+The solver therefore uses iterative subtour elimination.
+
+After each MILP solve:
+
+1. extract the source-to-sink path;
+2. detect disconnected cycles;
+3. add a subtour-elimination constraint for each detected cycle;
+4. solve the strengthened MILP again;
+5. repeat until no subtours remain.
+
+For a detected vertex set `S`, the added inequality is of the form:
+
+```text
+Σ x[i,j] <= |S| - 1
+```
+
+for arcs contained entirely in `S`.
+
+The reported `subtours_count` is the cumulative number of individual subtours detected and eliminated across all solve rounds.
+
+---
+
+## Optimality and solver time limit
+
+Experimental runs require a **proven optimum**.
+
+PuLP/CBC can sometimes return a feasible incumbent when the solver reaches its time limit without proving optimality. Such a solution is not treated as optimal.
+
+The experiments currently use a cumulative per-instance wall-clock limit of:
+
+```python
+MAX_TOTAL_TIME = 300
+```
+
+seconds.
+
+If CBC reaches the time limit without proving optimality, the observation is recorded as:
+
+```text
+TIMEOUT
+```
+
+rather than as a program error.
+
+A genuine infeasibility or unexpected implementation failure remains:
+
+```text
+ERROR
+```
+
+This distinction is important in the computational experiments because difficult instances are themselves part of the observed solver behavior.
+
+---
+
+## Returned solution
+
+`optimize()` returns:
+
+```python
+(
+    graph_path_vertices_ordered,
+    file_paths_for_the_ordered_licks_in_the_solution,
+    objective_value,
+    subtours_count,
+    time_taken,
+)
+```
+
+Both:
+
+```python
+graph_path_vertices_ordered
+```
+
+and:
+
+```python
+file_paths_for_the_ordered_licks_in_the_solution
+```
+
+contain **actual musical licks only**.
+
+The dummy source and sink are removed before the solution is returned.
+
+The optimizer also performs consistency checks on successful solutions, including:
+
+- total musical duration equals `b`;
+- exactly one turnaround is selected;
+- the turnaround is the last actual lick;
+- returned vertices correspond to actual candidates;
+- dummy nodes do not leak into MusicXML processing.
+
+---
+
+## `post_processing.py` — MusicXML merging
+
+`post_process()` receives the ordered paths of the selected actual lick files.
+
+It merges their MusicXML measures into one `score-partwise` document.
+
+The measures are:
+
+- appended in optimized order;
+- renumbered sequentially.
+
+Only actual lick files are passed to this stage. The dummy source and sink exist only inside the MILP formulation.
+
+---
+
+## Running a single generated solo
+
+A standard end-to-end run follows the sequence:
+
+```text
+candidate generation
+        ↓
+classification
+        ↓
+cost matrix
+        ↓
+MILP optimization
+        ↓
+subtour elimination
+        ↓
+ordered actual lick files
+        ↓
+MusicXML post-processing
+```
+
+Depending on the version of `main.py`, run:
 
 ```bash
 python main.py
 ```
 
-Outputs:
-
-* `solutions/ordered_licks_optm_output.xml`
-* `licks_list_1.pkl` (and additional `.pkl` files if you change the loop in `main.py`)
-
 ---
 
-## Code overview
+## Computational experiments
 
-### `label_chosen_licks.py` — sampling + classification
+The scaling experiments vary candidate-set size `L` across three profiles.
 
-**Sampling (`select_N_lick_samples`)**
+Current experimental grid:
 
-* Randomly selects `n` licks from the dataset folders.
-* Enforces:
-
-  * the **first** and **last** sampled licks are **regular**
-  * there is **at least one repetition** lick
-  * there is **at least one turnaround** lick
-
-**Classification (`lick_classification`)**
-Parses a lick’s MusicXML and returns:
-
-```
-[first_note, last_note, classes, duration_in_bars, file_path]
+```python
+EXPERIMENTS = [
+    ("Slow",     0, [32, 43]),
+    ("Moderate", 1, [32, 62, 160]),
+    ("Fast",     2, [32, 62]),
+]
 ```
 
-Classes:
+For the full study:
 
-* **C1**: repetition (filename/path contains `"repetition"`)
-* **C2**: ends with rest, duration ≤ 1 beat
-* **C3**: ends with rest, duration > 1 beat
-* **C4**: ends with rest, duration > 2 beats
-* **C5**: starts with rest, duration ≤ 1 beat
-* **C6**: starts with rest, duration > 1 beat
-* **C7**: starts with rest, duration > 2 beats
-* **C8**: turnaround (requires `<lick-label>turnaround</lick-label>` in the first measure)
-* **C9**: regular (none of the above)
-
-Duration in bars:
-
-* Turnaround (**C8**) → **2 bars**
-* Otherwise → **1 bar**
-
----
-
-### `cost_matrix_construction.py` — transition scoring
-
-Builds a matrix `p[i][j]` (size = number of sampled licks) based on heuristic rules **T1–T9**.
-
-* Lower costs (especially **negative**) are “better” transitions because the optimization **minimizes** total cost.
-* Diagonal transitions are blocked with cost **100**.
-* If a transition matches none of the rules, it falls back to **100**.
-
----
-
-### `optimization.py` — integer programming + subtour elimination
-
-Solves for an ordered path using:
-
-* `x[i,j] ∈ {0,1}`: whether transition `(i → j)` is used
-* `y[i] ∈ {0,1}`: whether lick `i` is selected (interior nodes only)
-
-Objective:
-
-* Minimize `Σ p[i][j] * x[i,j]`
-
-Key constraints (as implemented):
-
-* Start node has exactly **one outgoing** arc
-* End node has exactly **one incoming** arc
-* Interior nodes obey flow constraints linked to `y[i]`
-* Total duration (bars) constraint:
-
-  * `Σ duration[i] * y[i] == b`
-* Limits:
-
-  * repetition licks ≤ `r` (currently `r = 1`)
-  * pause-type licks ≤ `s` (currently `s = 3`)
-* Start cannot directly connect to end (`x[start,end] = 0`)
-* Turnaround placement constraint:
-
-  * Start must connect to a **non-turnaround** lick
-  * The lick right before the end must be a **turnaround** lick
-* Iterative subtour elimination:
-
-  * The model is solved repeatedly; if cycles (subtours) appear, new constraints are added to forbid them.
-
-The function returns:
-
-* ordered vertices,
-* ordered MusicXML file paths,
-* objective value,
-* subtour count,
-* solve time.
-
----
-
-### `post_processing.py` — merge MusicXML files
-
-Takes the ordered MusicXML file list and merges their measures into one `score-partwise` output.
-
-* Measures are appended in order and renumbered sequentially.
-* The MusicXML DOCTYPE is manually written (ElementTree does not preserve it).
-
----
-
-### `main.py` — end-to-end runner
-
-Typical run sequence:
-
-1. sample licks
-2. build cost matrix
-3. optimize
-4. save run data to `.pkl`
-5. merge ordered MusicXML into `solutions/ordered_licks_optm_output.xml`
-
----
-
-## Configuration knobs (practical)
-
-You’ll most likely adjust these:
-
-* **Sample size** (number of candidate licks):
-
-  * in `main.py`, the `select_N_lick_samples(...)` call
-* **Target bars** `b`:
-
-  * in `main.py`, the `optimize(..., b)` call
-* **Repetition / pause limits**:
-
-  * in `optimization.py` (`r = 1`, `s = 3`)
-
----
-
-## Known issues / important notes (current code)
-
-1. **Signature mismatch in `select_N_lick_samples`**
-
-* `label_chosen_licks.py` defines:
-
-  ```py
-  def select_N_lick_samples(n: int):
-  ```
-* but `main.py` currently calls:
-
-  ```py
-  select_N_lick_samples(14, 2)
-  ```
-
-If your repo is exactly as pasted, this will raise a `TypeError`.
-Fix by either:
-
-* updating the function to accept the second argument, or
-* changing the call to `select_N_lick_samples(14)`.
-
-2. **Pause-lick detection bug in optimization**
-   In `optimization.py`:
-
-```py
-if ("C2" or "C3" or "C4" or "C5" or "C6" or "C7") in licks_list[i][2]:
+```python
+NUM_RUNS = 100
 ```
 
-In Python this collapses to `"C2" in ...`, so it only detects C2.
-If you want “any of C2..C7”, use:
+giving:
 
-```py
-if any(c in licks_list[i][2] for c in ["C2","C3","C4","C5","C6","C7"]):
+```text
+7 configurations x 100 runs = 700 instances
 ```
 
-3. **Verbose printing**
-   `build_cost_matrix()` prints the entire matrix. For larger samples, this can be noisy.
+Each run uses a fresh feasible candidate set.
+
+Recorded quantities include:
+
+- wall-clock optimization time;
+- number of subtours eliminated;
+- objective value;
+- completion status.
+
+Typical statuses are:
+
+```text
+OK
+TIMEOUT
+ERROR
+```
+
+---
+
+## Checkpoints and interrupted experiments
+
+Each simulation is stored separately as a `.pkl` checkpoint.
+
+This allows a long experiment to be interrupted and restarted without losing completed runs.
+
+A resumed experiment can therefore produce messages such as:
+
+```text
+Run 001/100 checkpoint -> OK
+Run 002/100 checkpoint -> OK
+...
+```
+
+rather than solving those observations again.
+
+The checkpoint normally preserves information such as:
+
+```text
+profile
+SMF
+L
+run number
+random seed
+sampled licks
+ordered solution
+objective value
+subtour count
+runtime
+status
+error information
+```
+
+This is particularly useful for the largest configuration, `Moderate, L=160`, where occasional instances can be substantially more computationally demanding.
+
+---
+
+## Treatment of timeouts in experiments
+
+Runs that fail to reach proven optimality within the fixed 300-second cumulative limit are not replaced by newly sampled instances.
+
+They are preserved as `TIMEOUT` observations.
+
+For example, a final experiment may report:
+
+```text
+successful = 98
+timeouts = 2
+errors = 0
+```
+
+Objective-value and subtour statistics should be computed from runs for which an optimum was proven.
+
+The timeout frequency should also be reported because it is part of the computational behavior of the formulation.
 
 ---
 
 ## Reproducibility
 
-Sampling is random. If you want repeatable outputs, set a seed at the top of your run (e.g., in `main.py` before sampling):
+The experiment runner uses deterministic seeds derived from:
 
-```py
+```text
+base seed
+profile / SMF
+candidate-set size L
+run number
+```
+
+This allows a particular experiment instance to be reproduced without resampling a different candidate set.
+
+Both Python's `random` module and NumPy are seeded before candidate generation.
+
+For ad hoc runs, a simple fixed seed can also be used:
+
+```python
 import random
+import numpy as np
+
 random.seed(0)
+np.random.seed(0)
+```
+
+---
+
+## Practical configuration parameters
+
+Frequently adjusted parameters include:
+
+### Number of candidate licks
+
+```python
+L
+```
+
+Typical values used in the experiments are:
+
+```text
+Slow:      32, 43
+Moderate:  32, 62, 160
+Fast:      32, 62
+```
+
+### Target duration
+
+```python
+b = 12
+```
+
+### Repetition limit
+
+```python
+r = 1
+```
+
+### Pause-related limit
+
+```python
+s = 3
+```
+
+### Cumulative solver limit
+
+```python
+MAX_TOTAL_TIME = 300
+```
+
+seconds per sampled instance.
+
+### Maximum subtour-cut rounds
+
+A separate defensive limit is also maintained for the iterative subtour-elimination procedure.
+
+---
+
+## Important implementation notes
+
+### Candidate-set feasibility
+
+Randomly drawing `L` licks does not automatically imply that a 12-bar solution satisfying all role constraints exists.
+
+For example, a small candidate set dominated by pause-related licks may be unable to provide:
+
+```text
+10 non-turnaround one-bar licks
+```
+
+while respecting:
+
+```text
+pause-related licks <= 3
+```
+
+For this reason, candidate generation rejects structurally infeasible candidate sets before optimization.
+
+---
+
+### Feasible incumbent is not necessarily optimal
+
+When CBC reaches its time limit, it may have found a feasible integer solution without having proved that it is optimal.
+
+The code therefore distinguishes:
+
+```text
+proven optimal solution
+```
+
+from:
+
+```text
+integer-feasible incumbent
+```
+
+and only the former receives status `OK`.
+
+---
+
+### Computational variability
+
+MILP solution time can vary substantially even between instances with the same `L`.
+
+In particular, large `Moderate, L=160` instances may require many successive MILP solves and subtour cuts, producing a heavy right tail in runtime.
+
+For this reason, experiments report both means and medians and retain timeout information.
+
+---
+
+## Repository workflow
+
+The intended workflow is:
+
+```text
+Data Input
+    ↓
+Lick Classification
+    ↓
+Feasible Candidate Sampling
+    ↓
+Transition Cost Matrix
+    ↓
+MILP Optimization
+    ↓
+Iterative Subtour Elimination
+    ↓
+Ordered Actual Lick Sequence
+    ↓
+MusicXML Post-processing / Export
 ```
 
 ---
 
 ## Contact / authors
 
-* Sergio Bonini - e-mail: mrsergiobonini@gmail.com
+- **Sergio Bonini** — mrsergiobonini@gmail.com
+- **Sergio Da Silva** - professorsergiodasilva@gmail.com
