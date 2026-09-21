@@ -1,14 +1,16 @@
-from label_chosen_licks import select_N_lick_samples
-from cost_matrix_construction import build_cost_matrix
-
 from itertools import combinations
-from pulp import LpProblem, LpVariable, lpSum, LpMinimize, LpBinary
+from time import perf_counter
 
-from pulp import *
-from collections import defaultdict
-
-import time
-
+from pulp import (
+    LpProblem,
+    LpVariable,
+    lpSum,
+    LpMinimize,
+    LpBinary,
+    PULP_CBC_CMD,
+    LpStatus,
+    LpSolutionOptimal,
+)
 
 
 def power_set(iterable, min_size, max_size):
@@ -16,349 +18,543 @@ def power_set(iterable, min_size, max_size):
     Returns the power set (all subsets) of the given iterable
     as a list of tuples.
     """
-    s = list(iterable)  # Convert to list in case it's a set
+    s = list(iterable)
     subsets = []
     for r in range(min_size, max_size):
-        # combinations(s, r) gives all subsets of length r
         for combo in combinations(s, r):
             subsets.append(list(combo))
     return subsets
 
 
-'''
-licks_list = select_N_lick_samples(32) # Select 30 random licks plus inital 
-                                                                  # and final dummy licks
-p = build_cost_matrix(licks_list) # Build the cost matrix
-'''
-def optimize(licks_list, p, b):
-
-    #L = licks_list # Set of licks (vertices)
-    L = [] # Set of licks (vertices) (0, 1, ..., number_of_licks + 1) 
-    for i in range(len(licks_list)):
-        L.append(i)
+def _selected_edges(A, x):
+    """Return the arcs selected by the current MILP solution."""
+    return [
+        (i, j)
+        for (i, j) in A
+        if x[i, j].varValue is not None and x[i, j].varValue > 0.5
+    ]
 
 
-    A = [] # Set of arcs (edges)
-    for i in range(len(L)):
-        for j in range(len(L)):
-            if i != j:
-                A.append((L[i], L[j]))
+def _extract_main_path_and_subtours(selected_edges, source, sink):
+    """
+    Decompose the selected arcs into:
+      1. the unique source-to-sink path;
+      2. all remaining directed cycles (subtours).
+    """
+    successor = {}
 
-    L_prime = L.copy() # Set of licks (vertices) to be optimized, without the first and last licks (which are always dummy or regular licks)
-    for i in range(2):
-        L_prime.remove(L[-i])
+    for i, j in selected_edges:
+        if i in successor:
+            raise RuntimeError(
+                f"Invalid solution structure: vertex {i} has more than one "
+                "selected outgoing arc."
+            )
+        successor[i] = j
 
-    G = (L, A) # Graph G = (L, A) (may not be used)
+    # Main path: source -> ... -> sink
+    main_path = []
+    current = source
+    visited = set()
 
-    R = [] # Set of repetition licks
-    for i in range (1, len(licks_list) - 1):
-        if "C1" in licks_list[i][2]:
-            R.append(i)
+    while current != sink:
+        if current in visited:
+            raise RuntimeError(
+                "A cycle was encountered while following the source-to-sink path."
+            )
 
-    T = [] # Set of turnaround licks
-    for i in range (1, len(licks_list) - 1):
-        if "C8" in licks_list[i][2]:
-            T.append(i)
+        visited.add(current)
 
-    P = [] # Set of licks with pause
-    for i in range (1, len(licks_list) - 1):
-        if ("C2" or "C3" or "C4" or "C5" or "C6" or "C7") in licks_list[i][2]:
-            P.append(i)
+        if current not in successor:
+            raise RuntimeError(
+                f"Invalid solution structure: no selected outgoing arc from "
+                f"vertex {current} while constructing the main path."
+            )
+
+        nxt = successor[current]
+        main_path.append((current, nxt))
+        current = nxt
+
+        if len(main_path) > len(selected_edges):
+            raise RuntimeError(
+                "Main-path extraction exceeded the number of selected arcs."
+            )
+
+    # Everything not in the main path must be a directed cycle
+    remaining = set(selected_edges) - set(main_path)
+    subtours = []
+
+    while remaining:
+        first_edge = next(iter(remaining))
+        start_vertex = first_edge[0]
+
+        subtour = []
+        current = start_vertex
+        visited_cycle = set()
+
+        while True:
+            if current in visited_cycle:
+                if current != start_vertex:
+                    raise RuntimeError(
+                        "Malformed subtour encountered while extracting cycles."
+                    )
+                break
+
+            visited_cycle.add(current)
+
+            if current not in successor:
+                raise RuntimeError(
+                    f"Invalid subtour structure: vertex {current} has no "
+                    "selected outgoing arc."
+                )
+
+            nxt = successor[current]
+            edge = (current, nxt)
+
+            if edge not in remaining:
+                raise RuntimeError(
+                    "Unexpected selected-edge structure while extracting a subtour."
+                )
+
+            subtour.append(edge)
+            current = nxt
+
+            if current == start_vertex:
+                break
+
+            if len(subtour) > len(remaining):
+                raise RuntimeError(
+                    "Subtour extraction exceeded the number of remaining arcs."
+                )
+
+        for edge in subtour:
+            remaining.remove(edge)
+
+        subtours.append(subtour)
+
+    return main_path, subtours
 
 
-    # Parameters
-    c = [] # Set of durations (in bars) for each lick
-    for lick in licks_list:
-        c.append(lick[3]) 
+def optimize(
+    licks_list,
+    p,
+    b,
+    max_total_time=300,
+    max_cut_rounds=1000,
+    verbose=False,
+):
+    """
+    Solve the lick-sequencing MILP with iterative subtour elimination.
 
-    #b = 11  # Quantity of bars in the solo (will be setted arbitrarily) 
-        # Given that there must be exactly one turnaround lick and it is the
-        # only lick that has 2 bars (others have 1), 'b' will be the quantity of
-        # nodes (from L_prime) used in the solution plus one 
-    r = 1  # Constraint (5) (must be 1)
-    s = 3  # Constraint (6) (must be 3)
+    Parameters
+    ----------
+    licks_list : list
+        Classified candidate licks. Every entry is an actual musical lick;
+        dummy source and sink boundary nodes are created internally.
+    p : sequence
+        Cost matrix.
+    b : int or float
+        Required total duration in bars.
+    max_total_time : float, optional
+        Maximum cumulative time, in seconds, allowed for all solve/cut
+        iterations of this optimization instance. Default: 300 seconds.
+    max_cut_rounds : int, optional
+        Maximum number of MILP solve rounds. Default: 1000.
+    verbose : bool, optional
+        If True, print one compact progress line per solve round.
 
+    Returns
+    -------
+    graph_path_vertices_ordered
+    file_paths_for_the_ordered_licks_in_the_solution
+    objective_value
+    subtours_count
+    time_taken
 
-    # 2 < |S| < b (or len(L_prime) (modified from the paper))
-    #S = power_set(L_prime, 3, len(L_prime)) #  # Subsets of L_prime
+    Notes
+    -----
+    * time_taken is cumulative across ALL MILP solve rounds and subtour-cut
+      generation, rather than only the final model.solve().
+    * subtours_count is the total number of individual subtours detected
+      across all rounds.
+    """
 
+    # ------------------------------------------------------------------
+    # Nodes and arcs
+    # ------------------------------------------------------------------
+    # Every entry in licks_list is an ACTUAL candidate lick.  The source
+    # and sink below are genuine dummy boundary nodes and therefore do not
+    # correspond to MusicXML files, durations, or transition-cost entries.
+    actual_nodes = list(range(len(licks_list)))
 
-    # Define the optimization problem
+    if not actual_nodes:
+        raise ValueError("licks_list must contain at least one candidate lick.")
+
+    n = len(actual_nodes)
+    source = n
+    sink = n + 1
+
+    # Only three kinds of arcs are required:
+    #   dummy source -> actual lick
+    #   actual lick  -> different actual lick
+    #   actual lick  -> dummy sink
+    # There are deliberately no arcs into source, out of sink, or directly
+    # from source to sink.
+    actual_arcs = [
+        (i, j)
+        for i in actual_nodes
+        for j in actual_nodes
+        if i != j
+    ]
+    source_arcs = [(source, j) for j in actual_nodes]
+    sink_arcs = [(i, sink) for i in actual_nodes]
+    A = source_arcs + actual_arcs + sink_arcs
+
+    # Repetition licks
+    R = [
+        i
+        for i in actual_nodes
+        if "C1" in licks_list[i][2]
+    ]
+
+    # Turnaround licks
+    T = [
+        i
+        for i in actual_nodes
+        if "C8" in licks_list[i][2]
+    ]
+
+    # Licks with pause. Correctly tests C2, C3, ..., C7 individually.
+    pause_codes = ("C2", "C3", "C4", "C5", "C6", "C7")
+    P = [
+        i
+        for i in actual_nodes
+        if any(code in licks_list[i][2] for code in pause_codes)
+    ]
+
+    # Duration of each ACTUAL lick, in bars.
+    c = [lick[3] for lick in licks_list]
+
+    # Constraints (5) and (6)
+    r = 1
+    s = 3
+
+    # Model
     model = LpProblem("Integer_Programming_Model", LpMinimize)
 
-    # Define decision variables
-    x = {(i, j): LpVariable(f"x_{i}_{j}", cat=LpBinary) for (i, j) in A}
-    y = {i: LpVariable(f"y_{i}", cat=LpBinary) for i in L_prime}
+    x = {
+        (i, j): LpVariable(f"x_{i}_{j}", cat=LpBinary)
+        for (i, j) in A
+    }
 
-    # Objective function (1)
-    model += lpSum(p[i][j] * x[i, j] for (i, j) in A)
+    # y exists only for actual candidate licks, never for dummy nodes.
+    y = {
+        i: LpVariable(f"y_{i}", cat=LpBinary)
+        for i in actual_nodes
+    }
 
-    # Constraints
-    # Additional constraint to make the modified formulation of (2) and (3) work
-    model += x[0, L[-1]] == 0
+    # Objective function (1): only transitions between actual licks have a
+    # musician-derived transition cost.  Dummy-boundary arcs have zero cost
+    # and therefore do not enter the objective.
+    model += lpSum(
+        p[i][j] * x[i, j]
+        for (i, j) in actual_arcs
+    )
 
-    # (2)
-    '''
-    for i in L_prime:
-        L_minus_zero = L.copy()
-        L_minus_zero.remove(L[0])
-        model += lpSum(x[i, j] for j in L_minus_zero if (i, j) in A) == y[i]
-        '''
-    for i in L:
-        if i == 0:
-            model += lpSum(x[i, j] for j in L if (i, j) in A) == 1
-        elif i > 0 and i < L[-1]:
-            model += lpSum(x[i, j] for j in L if (i, j) in A) == y[i]
-        else:
-            model += lpSum(x[i, j] for j in L if (i, j) in A) == 0
-        
+    # Constraints (2) and (3): one source-to-sink path through selected
+    # actual licks.  Dummy source has exactly one outgoing arc and dummy sink
+    # exactly one incoming arc.
+    model += lpSum(x[source, j] for j in actual_nodes) == 1
+    model += lpSum(x[i, sink] for i in actual_nodes) == 1
 
-    '''
-    L_minus_n_plus_1 = L.copy()
-    L_minus_n_plus_1.remove(L[-1])
-    L_minus_n_plus_1.remove(L[0]) # Modification to the formulation on the paper
-    for i in L_prime:
-        model += lpSum(x[i, j] for j in L_minus_n_plus_1 if (i, j) in A) == y[i]
-    '''
-    # (3)
-    '''
-    for j in L_prime:
-        L_minus_n_plus_1 = L.copy()
-        L_minus_n_plus_1.remove(L[-1])
-        model += lpSum(x[i, j] for i in L_minus_n_plus_1 if (i, j) in A) == y[j]
-        '''
-    for j in L:
-        if j == 0:
-            model += lpSum(x[i, j] for i in L if (i, j) in A) == 0
-        elif j > 0 and j < L[-1]:
-            model += lpSum(x[i, j] for i in L if (i, j) in A) == y[j]
-        else:
-            model += lpSum(x[i, j] for i in L if (i, j) in A) == 1
-        
+    for i in actual_nodes:
+        model += (
+            lpSum(x[i, j] for j in actual_nodes if j != i)
+            + x[i, sink]
+            == y[i]
+        )
 
+    for j in actual_nodes:
+        model += (
+            x[source, j]
+            + lpSum(x[i, j] for i in actual_nodes if i != j)
+            == y[j]
+        )
 
-    '''
-    L_minus_0 = L.copy()
-    L_minus_0.remove(L[0])
-    L_minus_0.remove(L[-1]) # Modification to the formulation on the paper
-    for j in L_prime:
-        model += lpSum(x[i, j] for i in L_minus_0 if (i, j) in A) == y[j]
-    '''
+    # Constraint (4): total duration counts every selected ACTUAL lick.
+    model += lpSum(c[i] * y[i] for i in actual_nodes) == b
 
-    model += lpSum(c[i] * y[i] for i in L_prime) == b  # Constraint (4)
+    # Constraint (5)
+    model += lpSum(y[i] for i in R) <= r
 
-    model += lpSum(y[i] for i in R) <= r  # Constraint (5) (modified from the formulation on the paper, <=,
-                                        # given its constraint determined on table 3 of the paper, =1)
-    model += lpSum(y[i] for i in P) <= s  # Constraint (6)
+    # Constraint (6)
+    model += lpSum(y[i] for i in P) <= s
 
-    # Constraint (7)
-    L_prime_minus_T = L_prime.copy()
-    for t in T:
-        L_prime_minus_T.remove(t)
-    model += lpSum(x[0, j] for j in L_prime_minus_T) == 1
-    model += lpSum(x[i, len(L_prime)+1] for i in T) == 1
+    # Constraint (7): exactly one turnaround lick is selected, and that
+    # unique turnaround is the final actual lick immediately before the
+    # dummy sink.  The first actual lick is therefore required to be a
+    # non-turnaround lick as well.
+    if not T:
+        raise ValueError("The candidate set contains no turnaround lick.")
 
-    # Constraint (8)
-    for (i, j) in A:
-        if i < j:
-            model += x[i, j] + x[j, i] <= 1
+    actual_nodes_minus_T = [i for i in actual_nodes if i not in T]
 
-    # Constraint (9) - Connectivity constraint (may be removed considering the new formulated one in every iteration of 'model.solve()')
-    '''
-    for subset in S:
-        #not_subset = L
-        for subset_element in subset:
+    # Exactly one turnaround is used anywhere in the 12-bar solution.
+    model += lpSum(y[i] for i in T) == 1
 
-            model += lpSum(x[i, j] for i in subset for j in subset if (i, j) in A) >= 1
+    # The path must start with a non-turnaround and end with the unique
+    # selected turnaround immediately before the dummy sink.
+    model += lpSum(x[source, j] for j in actual_nodes_minus_T) == 1
+    model += lpSum(x[i, sink] for i in T) == 1
 
-            
-    Z = []
-    for (i, j) in A:
-        if x[i, j].varValue == 1:
-            Z.append((i, j))
+    # Constraint (8): prohibit choosing both directions between the same two
+    # actual licks.  Dummy-boundary arcs cannot form such two-node cycles.
+    for i in actual_nodes:
+        for j in actual_nodes:
+            if i < j:
+                model += x[i, j] + x[j, i] <= 1
 
-    #print(Z)
-    edge1 = Z[0]
-    w = True
-    while w:
-        for edge2 in Z:
-            if edge1[1] == edge2[0]:
-                Z.remove(edge1)
-                edge1 = edge2
-                if edge2[1] == L[-1]:
-                    Z.remove(edge2)
-                    w = False
-                    break
-
-
-    #print(Z)
-
-    # Remove all remaining cycles
-    Subtours = []
-    while len(Z) > 0:
-        edge1 = Z[0]
-        edge0 = Z[0]
-        Subtour = [edge1]
-        w = True
-        while w:
-            for edge2 in Z:
-                if edge1[1] == edge2[0]:
-                    Subtour.append(edge2)
-                    Z.remove(edge1)
-                    edge1 = edge2
-                    if edge2[1] == edge0[0]:
-                        Z.remove(edge2)
-                        w = False
-                        break
-        Subtours.append(Subtour)
-
-    for subtour in Subtours:
-        model += lpSum(x[edge[0], edge[1]] for edge in subtour) <= len(Z) - 1
-    '''
-
-
-    # Solve the model
+    # Iterative solution + subtour elimination
     subtours_count = 0
+    solve_round = 0
+
+    # Defensive safeguard against adding the same vertex-set cut twice.
+    added_subtour_sets = set()
+
+    total_start_time = perf_counter()
+
     while True:
-        start_time = time.time() 
-        model.solve()
-        # Every iteration, we try to find a solution. Then, we check for subtours.
-        # If there are no subtours, the solution is adopted, otherwise, new constraints are setted
-        # to the model in order to make it avoid utilizing the subtour(s) just found in future solutions
-        Z = []
-        for (i, j) in A:
-            if x[i, j].varValue == 1:
-                Z.append((i, j))
+        solve_round += 1
 
-        print(Z)
-        edge1 = Z[0]
-        w = True
-        while w:
-            for edge2 in Z:
-                if edge1[1] == edge2[0]:
-                    Z.remove(edge1)
-                    edge1 = edge2
-                    if edge2[1] == L[-1]:
-                        Z.remove(edge2)
-                        w = False
-                        break
+        if solve_round > max_cut_rounds:
+            elapsed = perf_counter() - total_start_time
+            raise RuntimeError(
+                f"Maximum number of subtour-elimination rounds "
+                f"({max_cut_rounds}) reached after {elapsed:.2f} seconds."
+            )
 
-        if len(Z) == 0:
-            end_time = time.time()
-            time_taken = end_time - start_time
-            print(f"Solution found in {time_taken:.2f} seconds")
+        elapsed = perf_counter() - total_start_time
+        remaining_time = max_total_time - elapsed
+
+        if remaining_time <= 0:
+            raise TimeoutError(
+                f"Optimization exceeded the {max_total_time}-second "
+                "cumulative time limit."
+            )
+
+        # CBC receives only the time still available for this instance.
+        solver = PULP_CBC_CMD(
+            msg=verbose,
+            timeLimit=remaining_time,
+            gapRel=0.0,
+            threads=1,
+            timeMode="elapsed",
+        )
+
+        model.solve(solver)
+
+        elapsed = perf_counter() - total_start_time
+        status = LpStatus[model.status]
+
+        if verbose:
+            print(
+                f"Round {solve_round}: "
+                f"status={status}, elapsed={elapsed:.2f}s"
+            )
+
+        # Do not inspect variable values as if they were an exact optimum
+        # unless CBC actually reports an optimal solution.  Recent PuLP
+        # versions also expose model.sol_status, which distinguishes a proven
+        # optimum from a merely feasible incumbent returned at a time limit.
+        solution_status = getattr(model, "sol_status", None)
+
+        proven_optimal = (
+            status == "Optimal"
+            and (solution_status is None or solution_status == LpSolutionOptimal)
+        )
+
+        if not proven_optimal:
+
+            # CBC can report broad status "Optimal" through PuLP while
+            # solution_status=2 means only an integer-feasible incumbent
+            # was obtained before the time limit.
+            if (
+                solution_status == 2
+                or status == "Not Solved"
+                or elapsed >= max_total_time - 1e-6
+            ):
+                raise TimeoutError(
+                    f"Optimization stopped before proven optimality "
+                    f"after {elapsed:.2f}s: "
+                    f"status='{status}', "
+                    f"solution_status={solution_status}, "
+                    f"round={solve_round}."
+                )
+
+            raise RuntimeError(
+                f"Solver terminated without a proven optimum: "
+                f"status='{status}', "
+                f"solution_status={solution_status}, "
+                f"round={solve_round}."
+            )
+
+        selected_edges = _selected_edges(A, x)
+
+        if not selected_edges:
+            raise RuntimeError(
+                "The solver returned an optimal status but no selected arcs."
+            )
+
+        main_path, subtours = _extract_main_path_and_subtours(
+            selected_edges,
+            source,
+            sink,
+        )
+
+        # No subtours: final connected solution
+        if not subtours:
             break
-        
-        subtours_count += 1
-        print(Z)
 
-        # Remove all remaining cycles
-        Subtours = []
-        while len(Z) > 0:
-            edge1 = Z[0]
-            edge0 = Z[0]
-            Subtour = [edge1]
-            w = True
-            while w:
-                for edge2 in Z:
-                    if edge1[1] == edge2[0]:
-                        Subtour.append(edge2)
-                        Z.remove(edge1)
-                        edge1 = edge2
-                        if edge2[1] == edge0[0]:
-                            Z.remove(edge2)
-                            w = False
-                            break
-            Subtours.append(Subtour)
-        
-        for subtour in Subtours:
-            model += lpSum(x[edge[0], edge[1]] for edge in subtour) <= len(subtour) - 1 # Still needs to be validated
-        '''
-        G = nx.DiGraph()
-        G.add_edges_from(Z)
-        subtours = list(nx.simple_cycles(G))
-        from itertools import product
+        # Count INDIVIDUAL subcycles, rather than only cut rounds.
+        subtours_count += len(subtours)
 
-        if len(subtours) == 0:
-            break
+        if verbose:
+            print(
+                f"  detected {len(subtours)} subtour(s); "
+                f"cumulative total={subtours_count}"
+            )
+
+        # Strong vertex-set subtour-elimination cuts:
+        #   sum_{i,j in S, i != j} x_ij <= |S| - 1
+        # This eliminates every directed cycle entirely contained in S,
+        # not only the exact edge ordering found in the current solution.
+        cuts_added_this_round = 0
 
         for subtour in subtours:
-            subtour.append(subtour[0])
-            print(subtour)
-            model += lpSum(x[i, j] for (i, j) in product(subtour, subtour) if i != j) <= len(subtour) - 1
-        '''
+            S = frozenset(
+                vertex
+                for edge in subtour
+                for vertex in edge
+            )
 
+            if len(S) < 2:
+                raise RuntimeError(
+                    "A detected subtour has fewer than two vertices."
+                )
 
+            if S in added_subtour_sets:
+                raise RuntimeError(
+                    "A previously eliminated subtour vertex set reappeared; "
+                    "the algorithm is not making progress."
+                )
 
-    graph_path = [] # List of the edges used in the solution (unordered)
+            added_subtour_sets.add(S)
 
-    # Print solution
-    for (i, j) in A:
-        print(f"x[{i}, {j}] = {x[i, j].varValue}")
-        if x[i, j].varValue == 1:
-            graph_path.append((i, j))
+            model += lpSum(
+                x[i, j]
+                for i in S
+                for j in S
+                if i != j
+            ) <= len(S) - 1
 
-    edge1 = graph_path[0]
-    graph_path_ordered = [edge1] # List of the edges used in the solution (ordered)
-    while True:
-        for edge2 in graph_path:
-            if edge1[1] == edge2[0]:
-                graph_path_ordered.append(edge2)
-                edge1 = edge2
-                break
-        if edge1[1] == L[-1]:
-            break
+            cuts_added_this_round += 1
 
-    graph_path_vertices_ordered = [] # List of the vertices used in the solution (ordered)
-    for edge in graph_path_ordered:
-        graph_path_vertices_ordered.append(edge[0])
-    graph_path_vertices_ordered.append(graph_path_ordered[-1][1])
+        if cuts_added_this_round == 0:
+            raise RuntimeError(
+                "Subtours were detected, but no new subtour-elimination "
+                "constraints were added."
+            )
 
-    for i in L_prime:
-        print(f"y[{i}] = {y[i].varValue}")
+        # Enforce the cumulative timeout between rounds too.
+        if perf_counter() - total_start_time >= max_total_time:
+            raise TimeoutError(
+                f"Optimization exceeded the {max_total_time}-second "
+                "cumulative time limit."
+            )
 
-    print(graph_path_vertices_ordered)
-    print("Objective function value:", model.objective.value())
+    # Final statistics and ordered solution
+    time_taken = perf_counter() - total_start_time
 
-    '''
-    # Visualization of chosen edges in the matrix
-    for i in range(len(licks_list)):
-        for j in range(len(licks_list)):
-            if i != j:
-                if x[i, j].varValue == 1:
-                    print(p[i][j], end="@ ")
-                else:
-                    print(p[i][j], end=" ")
-            else:
-                print(p[i][j], end=" ")
-        print()
-        
-    '''
-    file_paths_for_the_ordered_licks_in_the_solution = []
+    if time_taken > max_total_time:
+        raise TimeoutError(
+            f"Optimization exceeded the {max_total_time}-second "
+            "cumulative time limit."
+        )
 
-    for vertex in graph_path_vertices_ordered:
-        file_paths_for_the_ordered_licks_in_the_solution.append(licks_list[vertex][-1])
+    graph_path_ordered = main_path
 
-    #print(file_paths_for_the_ordered_licks_in_the_solution)
-    
-    return graph_path_vertices_ordered, file_paths_for_the_ordered_licks_in_the_solution, model.objective.value(), subtours_count, time_taken
+    # main_path includes the genuine dummy source and sink internally.  The
+    # public return values contain only actual lick vertices/files so that
+    # downstream post-processing never tries to interpret a dummy node as a
+    # MusicXML lick.
+    full_path_vertices = [source]
+    full_path_vertices.extend(j for _, j in graph_path_ordered)
 
+    graph_path_vertices_ordered = [
+        vertex
+        for vertex in full_path_vertices
+        if vertex not in (source, sink)
+    ]
 
+    file_paths_for_the_ordered_licks_in_the_solution = [
+        licks_list[vertex][-1]
+        for vertex in graph_path_vertices_ordered
+    ]
 
+    # Defensive validation of the public solution representation.  Dummy
+    # source/sink nodes exist only inside the MILP and must never escape into
+    # post-processing or MusicXML export.
+    if any(vertex not in actual_nodes for vertex in graph_path_vertices_ordered):
+        raise RuntimeError(
+            "Internal error: a dummy/non-lick vertex leaked into the returned path."
+        )
 
+    if len(graph_path_vertices_ordered) != len(
+        file_paths_for_the_ordered_licks_in_the_solution
+    ):
+        raise RuntimeError(
+            "Internal error: returned lick vertices and file paths have different lengths."
+        )
 
+    if any(not path for path in file_paths_for_the_ordered_licks_in_the_solution):
+        raise RuntimeError(
+            "Internal error: an empty lick file path was returned for post-processing."
+        )
 
+    # Validate the musical invariants represented by the returned actual licks.
+    returned_duration = sum(c[vertex] for vertex in graph_path_vertices_ordered)
+    if abs(returned_duration - b) > 1e-9:
+        raise RuntimeError(
+            f"Internal error: returned lick path has duration {returned_duration}, "
+            f"expected {b}."
+        )
 
+    returned_turnarounds = [
+        vertex for vertex in graph_path_vertices_ordered if vertex in T
+    ]
+    if len(returned_turnarounds) != 1:
+        raise RuntimeError(
+            "Internal error: returned lick path does not contain exactly one turnaround."
+        )
 
+    if not graph_path_vertices_ordered or graph_path_vertices_ordered[-1] not in T:
+        raise RuntimeError(
+            "Internal error: the final returned actual lick is not the turnaround."
+        )
 
+    objective_value = model.objective.value()
 
+    if verbose:
+        print(
+            f"Final solution found after {solve_round} solve round(s) "
+            f"in {time_taken:.2f} seconds."
+        )
+        print(f"Subtours detected: {subtours_count}")
+        print(f"Objective function value: {objective_value}")
 
-'''
-# Stage 5: Post-processing
-file_paths_for_the_ordered_licks_in_the_solution = []
-
-for vertex in graph_path_vertices_ordered:
-    file_paths_for_the_ordered_licks_in_the_solution.append(licks_list[vertex][-1])
-
-print(file_paths_for_the_ordered_licks_in_the_solution)
-'''
+    return (
+        graph_path_vertices_ordered,
+        file_paths_for_the_ordered_licks_in_the_solution,
+        objective_value,
+        subtours_count,
+        time_taken,
+    )
