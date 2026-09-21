@@ -1,5 +1,6 @@
-import random
 import os
+import random
+
 from lxml import etree
 
 
@@ -7,409 +8,278 @@ from lxml import etree
 def get_note_info(note):
     pitch = note.find("pitch")
     if pitch is not None:
-        step = pitch.find("step").text  # Extracts the note name (e.g., F, G)
-        octave = pitch.find("octave").text  # Extracts the octave number
-        alter = pitch.find("alter")  # Checks for sharp (#) or flat (♭)
+        step = pitch.find("step").text
+        octave = pitch.find("octave").text
+        alter = pitch.find("alter")
 
-        # Convert alter to a string (if applicable)
         if alter is not None:
             alter_value = int(alter.text)
             if alter_value == 1:
-                step += "#"  # Sharp note
+                step += "#"
             elif alter_value == -1:
-                step += "♭"  # Flat note
+                step += "♭"
 
         return f"{step}{octave}"
-    else:
-        duration = note.find("duration").text
-        return "Rest w/ the duration (in beats) of " + duration
+
+    duration = note.find("duration").text
+    return "Rest w/ the duration (in beats) of " + duration
+
 
 def lick_classification(lick_file_path: str):
-    # Extract information from each lick and classify it from C1 to C9
-    # ------------------------------------------------------------------------------
-    # Otain first and last notes
+    """Extract boundary-note information and classify one lick from C1 to C9."""
     tree = etree.parse(lick_file_path)
     root = tree.getroot()
 
-    # Find all <note> elements
     notes = root.findall(".//note")
-    # Extract first and last note if available
-    if notes:
-        first_note = get_note_info(notes[0])
-        last_note = get_note_info(notes[-1])
-        #second_note = get_note_info(notes[1])
-        #print(f"First note: {first_note}")
-        #print(f"Last note: {last_note}")
-        #print(f"Second note: {second_note}")
-    else:
-        print("No notes found in the XML file.")
+    if not notes:
+        raise ValueError(f"No notes found in XML file: {lick_file_path}")
 
+    first_note = get_note_info(notes[0])
+    last_note = get_note_info(notes[-1])
 
-
-    # ------------------------------------------------------------------------------
-    # Classify it from C1 to C9
     lick_classes = []
-
     all_false = True
 
     # C1 (Repetition)
-    if lick_file_path.find("repetition") != -1:
-        #print("repetition")
+    if "repetition" in lick_file_path:
         lick_classes.append("C1")
         all_false = False
 
     # C2 (EwP <= 1)
     if last_note[0] == "R" and int(last_note[35:]) <= 1:
-        #print("EwP <= 1")
         lick_classes.append("C2")
         all_false = False
 
     # C3 (EwP > 1)
     if last_note[0] == "R" and int(last_note[35:]) > 1:
-        #print("EwP > 1")
         lick_classes.append("C3")
         all_false = False
 
-    # C4 (Ewp > 2)    
+    # C4 (EwP > 2)
     if last_note[0] == "R" and int(last_note[35:]) > 2:
-        #print("EwP > 2")
         lick_classes.append("C4")
         all_false = False
 
     # C5 (SwP <= 1)
     if first_note[0] == "R" and int(first_note[35:]) <= 1:
-        #print("SwP <= 1")
         lick_classes.append("C5")
         all_false = False
 
     # C6 (SwP > 1)
     if first_note[0] == "R" and int(first_note[35:]) > 1:
-        #print("SwP > 1")
         lick_classes.append("C6")
         all_false = False
 
     # C7 (SwP > 2)
     if first_note[0] == "R" and int(first_note[35:]) > 2:
-        #print("SwP > 2")
         lick_classes.append("C7")
         all_false = False
 
     # C8 (Turnaround)
     measure = root.find(".//measure")
-    lick_label = measure.find("lick-label").text if measure.find("lick-label") is not None else None
+    lick_label = (
+        measure.find("lick-label").text
+        if measure is not None and measure.find("lick-label") is not None
+        else None
+    )
     if lick_label == "turnaround":
-        #print("turnaround")
         lick_classes.append("C8")
         all_false = False
 
     # C9 (Regular)
     if all_false:
-        #print("any other (regular)")
         lick_classes.append("C9")
 
-    
+    # Turnarounds occupy two bars; every other lick occupies one bar.
+    duration_in_bars = 2 if "C8" in lick_classes else 1
+
+    return [
+        first_note,
+        last_note,
+        lick_classes,
+        duration_in_bars,
+        lick_file_path,
+    ]
 
 
-    # Find duration in bars for each lick
-    if "C8" in lick_classes: # If it is a turnaround lick, it has 2 bars of duration
-        duration_in_bars = 2
-    else: # Else it has 1 bar of duration
-        duration_in_bars = 1
-    
+# Selection of N actual candidate licks from the dataset.
+#
+# Every one of the n sampled files is an actual candidate lick.  The optimizer
+# creates genuine dummy source/sink nodes internally.
+#
+# Sampling protocol
+# -----------------
+# A size-n subset is drawn uniformly without replacement from the eligible
+# candidate pool.  If that subset cannot satisfy the model's fixed structural
+# constraints for the 12-bar experiments, it is rejected and another uniform
+# size-n subset is drawn.  Thus accepted samples are uniform conditional on
+# structural feasibility; no category is manually forced into a position.
+#
+# Fixed structural conditions mirrored from optimization.py:
+#   - total selected duration = 12 bars
+#   - exactly one turnaround is selected
+#   - at most one repetition lick is selected
+#   - at most three pause-related licks are selected
+#
+# SMF convention:
+#   0 -> slow
+#   1 -> moderate
+#   2 -> fast
+#
+# SMF applies only to speed-labelled FMS licks. Turnaround licks do not have
+# speed-specific folders in the current dataset and therefore remain eligible
+# for every SMF value.
 
-    # "lick_file_path" will be lick's ID
-    # Number of bars still needs to be added 
-    lick = [first_note, last_note, lick_classes, duration_in_bars, lick_file_path]
-
-    return lick
-
-
-
-
-
-# Selection of N samples from the dataset (there must be at least 1 turnaround and 1 repetition licks, due to the problem hard constraints)
-def select_N_lick_samples(n: int):
-    lick_samples = []
-    
-    FSM_regular_fast = r"licks_dataset_sampling/FMS/regular/fast"
-    FSM_regular_moderate = r"licks_dataset_sampling/FMS/regular/moderate"
-    FSM_regular_slow = r"licks_dataset_sampling/FMS/regular/slow"
-    
-    FSM_repetition_fast = r"licks_dataset_sampling/FMS/repetition/fast"
-    FSM_repetition_moderate = r"licks_dataset_sampling/FMS/repetition/moderate"
-    FSM_repetition_slow = r"licks_dataset_sampling/FMS/repetition/slow"
-    
-    FSM_repetition_with_pause_fast = r"licks_dataset_sampling/FMS/repetition_with_pause/fast"
-    FSM_repetition_with_pause_moderate = r"licks_dataset_sampling/FMS/repetition_with_pause/moderate"
-    
-    FSM_with_pause_fast = r"licks_dataset_sampling/FMS/with_pause/fast"
-    FSM_with_pause_moderate = r"licks_dataset_sampling/FMS/with_pause/moderate"
-    FSM_with_pause_slow = r"licks_dataset_sampling/FMS/with_pause/slow"
-
-    turnaround = r"licks_dataset_sampling/turnaround"
-    turnaround_with_pause = r"licks_dataset_sampling/turnaround_with_pause"
+_PAUSE_CODES = ("C2", "C3", "C4", "C5", "C6", "C7")
+_CLASSIFICATION_CACHE = {}
 
 
-    # List all files in the FSM directory 
-    fsm_regular_fast_files = [f for f in os.listdir(FSM_regular_fast) if os.path.isfile(os.path.join(FSM_regular_fast, f))]
-    fsm_regular_moderate_files = [f for f in os.listdir(FSM_regular_moderate) if os.path.isfile(os.path.join(FSM_regular_moderate, f))]
-    fsm_regular_slow_files = [f for f in os.listdir(FSM_regular_slow) if os.path.isfile(os.path.join(FSM_regular_slow, f))]
-
-    fsm_repetition_fast_files = [f for f in os.listdir(FSM_repetition_fast) if os.path.isfile(os.path.join(FSM_repetition_fast, f))]
-    fsm_repetition_moderate_files = [f for f in os.listdir(FSM_repetition_moderate) if os.path.isfile(os.path.join(FSM_repetition_moderate, f))]
-    fsm_repetition_slow_files = [f for f in os.listdir(FSM_repetition_slow) if os.path.isfile(os.path.join(FSM_repetition_slow, f))]
-
-    fsm_repetition_with_pause_fast_files = [f for f in os.listdir(FSM_repetition_with_pause_fast) if os.path.isfile(os.path.join(FSM_repetition_with_pause_fast, f))]
-    fsm_repetition_with_pause_moderate_files = [f for f in os.listdir(FSM_repetition_with_pause_moderate) if os.path.isfile(os.path.join(FSM_repetition_with_pause_moderate, f))]
-
-    fsm_with_pause_fast_files = [f for f in os.listdir(FSM_with_pause_fast) if os.path.isfile(os.path.join(FSM_with_pause_fast, f))]
-    fsm_with_pause_moderate_files = [f for f in os.listdir(FSM_with_pause_moderate) if os.path.isfile(os.path.join(FSM_with_pause_moderate, f))]
-    fsm_with_pause_slow_files = [f for f in os.listdir(FSM_with_pause_slow) if os.path.isfile(os.path.join(FSM_with_pause_slow, f))]
-
-    # List all files in the turnaround directory
-    turnaround_files = [f for f in os.listdir(turnaround) if os.path.isfile(os.path.join(turnaround, f))]
-    turnaround_with_pause_files = [f for f in os.listdir(turnaround_with_pause) if os.path.isfile(os.path.join(turnaround_with_pause, f))]
-
-   
-    At_least_one_repetition = False
-    At_least_one_turnaround = False
-
-    N = len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files)
-    M = len(turnaround_files) + len(turnaround_with_pause_files)
-    R = len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files)
-    A = R + N + len(fsm_with_pause_fast_files) + len(fsm_with_pause_moderate_files) + len(fsm_with_pause_slow_files) + M
-
-    q = 0
-    while q < n: # (n >= 4)
-
-        if (q == n - 3) and (not (At_least_one_repetition and At_least_one_turnaround)): # Garantee that there is at least one repetition and one turnaround lick
-            if not (At_least_one_repetition or At_least_one_turnaround): # Chose randomly one repetition and one turnaround licks in this order
-                # Chose randomly one repetition lick
-                if fsm_repetition_fast_files and fsm_repetition_moderate_files and fsm_repetition_slow_files and fsm_repetition_with_pause_fast_files and fsm_repetition_with_pause_moderate_files:
-                    while True:
-                        random_number = random.randint(0, N - 1)
-                        if random_number < len(fsm_repetition_fast_files):
-                            random_rep_file = random.choice(fsm_repetition_fast_files) 
-                            random_rep_file_path = os.path.join(FSM_repetition_fast, random_rep_file)
-                        elif random_number >= len(fsm_repetition_fast_files) and random_number < len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files):
-                            random_rep_file = random.choice(fsm_repetition_moderate_files) 
-                            random_rep_file_path = os.path.join(FSM_repetition_moderate, random_rep_file)
-                        elif random_number >= len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) and random_number < len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files):
-                            random_rep_file = random.choice(fsm_repetition_slow_files) 
-                            random_rep_file_path = os.path.join(FSM_repetition_slow, random_rep_file)
-                        elif random_number >= len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) and random_number < len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files):
-                            random_rep_file = random.choice(fsm_repetition_with_pause_fast_files)
-                            random_rep_file_path = os.path.join(FSM_repetition_with_pause_fast, random_rep_file)
-                        else:
-                            random_rep_file = random.choice(fsm_repetition_with_pause_moderate_files)
-                            random_rep_file_path = os.path.join(FSM_repetition_with_pause_moderate, random_rep_file)    
-                        
-                        #print("Randomly selected repetition lick file:", random_rep_file_path)
-
-                        if random_rep_file_path not in lick_samples:
-                            lick_samples.append(random_rep_file_path)
-                            At_least_one_repetition = True
-                            break
-                        else:
-                            continue
-                else:
-                    print("No files found in the repetition folders.")
-
-                # Chose randomly one turnaround lick
-                if turnaround_files and turnaround_with_pause_files:
-                    while True:
-                        random_number = random.randint(0, M - 1)
-                        if random_number < len(turnaround_files):
-                            random_turn_file = random.choice(turnaround_files) 
-                            random_turn_file_path = os.path.join(turnaround, random_turn_file)
-                        else:
-                            random_turn_file = random.choice(turnaround_with_pause_files) 
-                            random_turn_file_path = os.path.join(turnaround_with_pause, random_turn_file)
-
-                        #print("Randomly selected turnaround lick file:", random_turn_file_path)
-
-                        if random_turn_file_path not in lick_samples:
-                            lick_samples.append(random_turn_file_path)
-                            At_least_one_turnaround = True
-                            break
-                        else:
-                            continue
-                else:
-                    print("No files found in the turnaround folders.")
-
-                q += 1
-                
-            
-            else:
-                # If at least one repetition lick was chosen, one turnaround lick is randomly chosen
-                if At_least_one_repetition:
-                    if turnaround_files and turnaround_with_pause_files:
-                        while True:
-                            random_number = random.randint(0, M - 1)
-                            if random_number < len(turnaround_files):
-                                random_turn_file = random.choice(turnaround_files) 
-                                random_turn_file_path = os.path.join(turnaround, random_turn_file)
-                            else:
-                                random_turn_file = random.choice(turnaround_with_pause_files) 
-                                random_turn_file_path = os.path.join(turnaround_with_pause, random_turn_file)
-
-                            
-                            #print("Randomly selected turnaround lick file:", random_turn_file_path)
-
-                            if random_turn_file_path not in lick_samples:
-                                lick_samples.append(random_turn_file_path)
-                                At_least_one_turnaround = True
-                                break
-                            else:
-                                continue
-                    else:
-                        print("No files found in the turnaround folders.")
-                    
-                # If at least one turnaround lick was chosen, one repetition lick is randomly chosen
-                else:
-                    if fsm_repetition_fast_files and fsm_repetition_moderate_files and fsm_repetition_slow_files and fsm_repetition_with_pause_fast_files and fsm_repetition_with_pause_moderate_files:
-                        while True:
-                            random_number = random.randint(0, N - 1)
-                            if random_number < len(fsm_repetition_fast_files):
-                                random_rep_file = random.choice(fsm_repetition_fast_files) 
-                                random_rep_file_path = os.path.join(FSM_repetition_fast, random_rep_file)
-                            elif random_number >= len(fsm_repetition_fast_files) and random_number < len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files):
-                                random_rep_file = random.choice(fsm_repetition_moderate_files) 
-                                random_rep_file_path = os.path.join(FSM_repetition_moderate, random_rep_file)
-                            elif random_number >= len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) and random_number < len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files):
-                                random_rep_file = random.choice(fsm_repetition_slow_files) 
-                                random_rep_file_path = os.path.join(FSM_repetition_slow, random_rep_file)
-                            elif random_number >= len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) and random_number < len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files):
-                                random_rep_file = random.choice(fsm_repetition_with_pause_fast_files)
-                                random_rep_file_path = os.path.join(FSM_repetition_with_pause_fast, random_rep_file)
-                            else:
-                                random_rep_file = random.choice(fsm_repetition_with_pause_moderate_files)
-                                random_rep_file_path = os.path.join(FSM_repetition_with_pause_moderate, random_rep_file)    
-                            
-                            #print("Randomly selected repetition lick file:", random_rep_file_path)
-
-                            if random_rep_file_path not in lick_samples:
-                                lick_samples.append(random_rep_file_path)
-                                At_least_one_repetition = True
-                                break
-                            else:
-                                continue
-                    else:
-                        print("No files found in the repetition folders.")
-                    
-        else:
-            if q == 0 or q == n - 1: # Make sure that the first and last licks are regular
-                if fsm_regular_fast_files and fsm_regular_moderate_files and fsm_regular_slow_files:
-                    while True:
-                        random_number = random.randint(0, R - 1)
-                        if random_number < len(fsm_regular_fast_files):
-                            random_fsm_file = random.choice(fsm_regular_fast_files) 
-                            random_fsm_file_path = os.path.join(FSM_regular_fast, random_fsm_file)
-                        elif random_number >= len(fsm_regular_fast_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files):
-                            random_fsm_file = random.choice(fsm_regular_moderate_files) 
-                            random_fsm_file_path = os.path.join(FSM_regular_moderate, random_fsm_file)
-                        else:
-                            random_fsm_file = random.choice(fsm_regular_slow_files) 
-                            random_fsm_file_path = os.path.join(FSM_regular_slow, random_fsm_file)
-
-                        #print("Randomly selected fsm lick file:", random_fsm_file_path)
-
-                        if random_fsm_file_path not in lick_samples:
-                            lick_samples.append(random_fsm_file_path)
-                            break
-                        else:
-                            continue
-                else:    
-                    print("No files found in the regular folders.")
-
-            else: # Chose randomly a lick of any type
-                if fsm_regular_fast_files and fsm_regular_moderate_files and fsm_regular_slow_files and fsm_repetition_fast_files and fsm_repetition_moderate_files and fsm_repetition_slow_files and fsm_repetition_with_pause_fast_files and fsm_repetition_with_pause_moderate_files and fsm_with_pause_fast_files and fsm_with_pause_moderate_files and fsm_with_pause_slow_files and turnaround_files and turnaround_with_pause_files:
-                    random_number = random.randint(0, A - 1) # For the random choice of a lick sample
-                    while True:
-                        if random_number < len(fsm_regular_fast_files):
-                            random_file = random.choice(fsm_regular_fast_files)
-                            random_file_path = os.path.join(FSM_regular_fast, random_file)
-                            #print("Randomly selected fsm_regular_fast lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files):
-                            random_file = random.choice(fsm_regular_moderate_files)
-                            random_file_path = os.path.join(FSM_regular_moderate, random_file)
-                            #print("Randomly selected fsm_regular_moderate lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files):
-                            random_file = random.choice(fsm_regular_slow_files)
-                            random_file_path = os.path.join(FSM_regular_slow, random_file)
-                            #print("Randomly selected fsm_regular_slow lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files):
-                            random_file = random.choice(fsm_repetition_fast_files)
-                            random_file_path = os.path.join(FSM_repetition_fast, random_file)
-                            #print("Randomly selected fsm_repetition_fast lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files):
-                            random_file = random.choice(fsm_repetition_moderate_files)
-                            random_file_path = os.path.join(FSM_repetition_moderate, random_file)
-                            #print("Randomly selected fsm_repetition_moderate lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files):
-                            random_file = random.choice(fsm_repetition_slow_files)
-                            random_file_path = os.path.join(FSM_repetition_slow, random_file)
-                            #print("Randomly selected fsm_repetition_slow lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files):
-                            random_file = random.choice(fsm_repetition_with_pause_fast_files)
-                            random_file_path = os.path.join(FSM_repetition_with_pause_fast, random_file)
-                            #print("Randomly selected fsm_repetition_with_pause_fast lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files):
-                            random_file = random.choice(fsm_repetition_with_pause_moderate_files)
-                            random_file_path = os.path.join(FSM_repetition_with_pause_moderate, random_file)
-                            #print("Randomly selected fsm_repetition_with_pause_moderate lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) + len(fsm_with_pause_fast_files):
-                            random_file = random.choice(fsm_with_pause_fast_files)
-                            random_file_path = os.path.join(FSM_with_pause_fast, random_file)
-                            #print("Randomly selected fsm_with_pause_fast lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) + len(fsm_with_pause_fast_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) + len(fsm_with_pause_fast_files) + len(fsm_with_pause_moderate_files):
-                            random_file = random.choice(fsm_with_pause_moderate_files)
-                            random_file_path = os.path.join(FSM_with_pause_moderate, random_file)
-                            #print("Randomly selected fsm_with_pause_moderate lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) + len(fsm_with_pause_fast_files) + len(fsm_with_pause_moderate_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) + len(fsm_with_pause_fast_files) + len(fsm_with_pause_moderate_files) + len(fsm_with_pause_slow_files):
-                            random_file = random.choice(fsm_with_pause_slow_files)
-                            random_file_path = os.path.join(FSM_with_pause_slow, random_file)
-                            #print("Randomly selected fsm_with_pause_slow lick file:", random_file_path)
-                        elif random_number >= len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) + len(fsm_with_pause_fast_files) + len(fsm_with_pause_moderate_files) + len(fsm_with_pause_slow_files) and random_number < len(fsm_regular_fast_files) + len(fsm_regular_moderate_files) + len(fsm_regular_slow_files) + len(fsm_repetition_fast_files) + len(fsm_repetition_moderate_files) + len(fsm_repetition_slow_files) + len(fsm_repetition_with_pause_fast_files) + len(fsm_repetition_with_pause_moderate_files) + len(fsm_with_pause_fast_files) + len(fsm_with_pause_moderate_files) + len(fsm_with_pause_slow_files) + len(turnaround_files):
-                            random_file = random.choice(turnaround_files)
-                            random_file_path = os.path.join(turnaround, random_file)
-                            #print("Randomly selected turnaround lick file:", random_file_path)
-                        else:
-                            random_file = random.choice(turnaround_with_pause_files)
-                            random_file_path = os.path.join(turnaround_with_pause, random_file)
-                            #print("Randomly selected turnaround_with_pause lick file:", random_file_path)
-
-                        if random_file_path not in lick_samples:
-                            if random_file_path.find("repetition") != -1:
-                                At_least_one_repetition = True
-                            elif random_file_path.find("turnaround") != -1:
-                                At_least_one_turnaround = True
-                            
-                            lick_samples.append(random_file_path)
-                            break
-                        else:
-                            continue
-                else:
-                    print("No files found in the folders.")
-
-        q += 1 # Loop control
+def _classify_cached(path):
+    """Classify a lick once and reuse the result across repeated experiments."""
+    if path not in _CLASSIFICATION_CACHE:
+        _CLASSIFICATION_CACHE[path] = lick_classification(path)
+    return _CLASSIFICATION_CACHE[path]
 
 
+def _is_structurally_feasible(
+    classified_licks,
+    total_bars=12,
+    max_repetition=1,
+    max_pause=3,
+):
+    """
+    Exact feasibility screen for the role/duration constraints used by the MILP.
+
+    This is a small 0/1 dynamic program over states
+        (bars, turnaround_count, repetition_count, pause_count).
+    It correctly handles category overlaps, e.g. a turnaround that is also
+    pause-related.
+    """
+    # Start with the empty subset.
+    states = {(0, 0, 0, 0)}
+
+    for lick in classified_licks:
+        classes = set(lick[2])
+        duration = int(lick[3])
+        is_turnaround = int("C8" in classes)
+        is_repetition = int("C1" in classes)
+        is_pause = int(any(code in classes for code in _PAUSE_CODES))
+
+        next_states = set(states)
+
+        for bars, turnarounds, repetitions, pauses in states:
+            nb = bars + duration
+            nt = turnarounds + is_turnaround
+            nr = repetitions + is_repetition
+            npause = pauses + is_pause
+
+            if nb > total_bars:
+                continue
+            if nt > 1:
+                continue
+            if nr > max_repetition:
+                continue
+            if npause > max_pause:
+                continue
+
+            next_states.add((nb, nt, nr, npause))
+
+        states = next_states
+
+    return any(
+        bars == total_bars and turnarounds == 1
+        for bars, turnarounds, repetitions, pauses in states
+    )
 
 
-    #origin_of_classified_lick = {} # Dictionary to store the origin file path for each classified lick
-    #classified_lick_and_its_origin = {} # Dictionary to store the classified lick and its origin file path
-    # Classify the selected samples
-    classified_licks = []
-    for lick in lick_samples:
-        classified_lick = lick_classification(lick)
+def select_N_lick_samples(n: int, SMF: int, max_sampling_attempts: int = 10000):
+    if not isinstance(n, int) or n < 1:
+        raise ValueError("n must be a positive integer.")
 
-        #origin_of_classified_lick[lick] = classified_lick
+    if SMF not in (0, 1, 2):
+        raise ValueError("SMF must be 0 (slow), 1 (moderate), or 2 (fast).")
 
-        #classified_lick_and_its_origin[classified_lick] = lick
-        
-        classified_licks.append(classified_lick)
+    if not isinstance(max_sampling_attempts, int) or max_sampling_attempts < 1:
+        raise ValueError("max_sampling_attempts must be a positive integer.")
 
-    return classified_licks
+    speed = {0: "slow", 1: "moderate", 2: "fast"}[SMF]
 
-#select_N_lick_samples(5)
+    fms_root = r"licks_dataset_sampling/FMS"
+    regular_dir = os.path.join(fms_root, "regular", speed)
+    repetition_dir = os.path.join(fms_root, "repetition", speed)
+    with_pause_dir = os.path.join(fms_root, "with_pause", speed)
+
+    repetition_with_pause_dir = None
+    if SMF == 2:
+        repetition_with_pause_dir = os.path.join(
+            fms_root, "repetition_with_pause", "fast"
+        )
+    elif SMF == 1:
+        repetition_with_pause_dir = os.path.join(
+            fms_root, "repetition_with_pause", "moderate"
+        )
+
+    turnaround_dir = r"licks_dataset_sampling/turnaround"
+    turnaround_with_pause_dir = r"licks_dataset_sampling/turnaround_with_pause"
+
+    def files_in(directory):
+        if directory is None or not os.path.isdir(directory):
+            return []
+        return [
+            os.path.join(directory, filename)
+            for filename in os.listdir(directory)
+            if os.path.isfile(os.path.join(directory, filename))
+        ]
+
+    regular_files = files_in(regular_dir)
+
+    repetition_files = files_in(repetition_dir)
+    repetition_files += files_in(repetition_with_pause_dir)
+
+    with_pause_files = files_in(with_pause_dir)
+
+    turnaround_files = files_in(turnaround_dir)
+    turnaround_files += files_in(turnaround_with_pause_dir)
+
+    # One unique pool of ACTUAL candidate files.  No first/last files are
+    # reserved and no role category is forced into the draw.
+    candidate_pool = list(
+        dict.fromkeys(
+            regular_files
+            + repetition_files
+            + with_pause_files
+            + turnaround_files
+        )
+    )
+
+    if len(candidate_pool) < n:
+        raise ValueError(
+            f"Not enough distinct eligible lick files for n={n} and "
+            f"SMF={SMF} ({speed}). Only {len(candidate_pool)} are available."
+        )
+
+    # Fail early if even the complete eligible pool cannot support the model's
+    # structural constraints.  This distinguishes a dataset/configuration
+    # problem from an unlucky random draw.
+    full_pool_classified = [_classify_cached(path) for path in candidate_pool]
+    if not _is_structurally_feasible(full_pool_classified):
+        raise ValueError(
+            f"The complete eligible pool for SMF={SMF} ({speed}) cannot satisfy "
+            "the 12-bar role/duration constraints."
+        )
+
+    # Rejection sampling. random.sample() is uniform over size-n subsets, and
+    # acceptance depends only on feasibility, so the returned subset is uniform
+    # conditional on being structurally feasible.
+    for _ in range(max_sampling_attempts):
+        sampled_paths = random.sample(candidate_pool, n)
+        classified = [_classify_cached(path) for path in sampled_paths]
+
+        if _is_structurally_feasible(classified):
+            return classified
+
+    raise RuntimeError(
+        f"Unable to draw a structurally feasible sample of n={n} candidates "
+        f"for SMF={SMF} ({speed}) after {max_sampling_attempts} attempts. "
+        "Increase max_sampling_attempts or inspect the pool composition."
+    )
