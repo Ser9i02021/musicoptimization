@@ -1,91 +1,129 @@
-# MusicXML Lick Sequencing with Integer Programming
+text = """# MILP-Based Lick Sequencing for 12-Bar Blues Guitar Solos
 
-This project generates 12-bar blues guitar solos by selecting and ordering short MusicXML “licks” with a mixed-integer linear programming (MILP) model.
+This repository contains the implementation, computational experiments, and
+statistical-analysis workflow for a mixed-integer linear programming (MILP)
+approach to sequencing guitar licks into 12-bar blues solos.
 
-The implementation is based on the optimization framework investigated by Cunha, Subramanian, and Herremans (2018). Candidate licks are represented as vertices in a directed graph, transitions between licks receive rule-based costs, and the optimization model searches for a minimum-cost sequence satisfying musical and structural constraints.
+The implementation is based on the optimization framework investigated by
+Cunha, Subramanian, and Herremans (2018). Candidate licks are represented as
+vertices in a directed graph, transitions between licks receive deterministic
+rule-based costs, and a MILP selects and orders a subset of licks subject to
+musical and structural constraints.
 
-The main pipeline is:
+The repository supports three related tasks:
 
-1. **Sample** a feasible candidate set of licks from the dataset
-2. **Parse and classify** each lick into categories C1–C9
-3. Build a **transition cost matrix**
-4. Build and solve a **MILP**
-5. Iteratively eliminate disconnected **subtours**
-6. Recover the ordered sequence of actual licks
-7. Optionally **merge** the selected MusicXML files into a final MusicXML solo
+1. generating an optimized 12-bar blues guitar solo;
+2. reproducing the computational scalability experiment;
+3. reproducing the statistical and parameter-sensitivity analyses reported in
+   the associated study.
 
 ---
 
-## What you get
+## 1. Computational pipeline
 
-Depending on the runner being used, the project can produce:
-
-- ✅ An ordered 12-bar sequence of MusicXML licks
-- ✅ A merged MusicXML solo
-- ✅ `.pkl` checkpoints containing the sampled candidate set and optimization results
-- ✅ Objective value
-- ✅ Number of subtours eliminated
-- ✅ Optimization runtime
-- ✅ Run status (`OK`, `TIMEOUT`, or `ERROR`)
-- ✅ CSV and text/LaTeX summaries for simulation experiments
-
-The standard MusicXML output is written under:
+The main optimization pipeline is:
 
 ```text
-solutions/
+MusicXML lick dataset
+        |
+        v
+Candidate sampling
+        |
+        v
+Lick classification
+        |
+        v
+Transition-cost matrix
+        |
+        v
+MILP optimization
+        |
+        v
+Iterative subtour elimination
+        |
+        v
+Optimal source-to-sink lick sequence
+        |
+        v
+Optional MusicXML export
 ```
+
+The principal implementation files are:
+
+```text
+label_chosen_licks.py
+cost_matrix_construction.py
+optimization.py
+post_processing.py
+main.py
+```
+
+The repository additionally contains experiment runners, saved run-level
+results, and statistical-analysis scripts.
 
 ---
 
-## Requirements
+## 2. Requirements
 
-- Python 3.x
-- Packages:
-  - `numpy`
-  - `lxml`
-  - `pulp`
-  - `pandas` for the experiment/simulation scripts
-
-Install with:
+The project requires Python 3 and the following principal packages:
 
 ```bash
-pip install numpy lxml pulp pandas
+pip install numpy pandas scipy matplotlib lxml pulp
 ```
 
-The optimization experiments use CBC through PuLP.
+CBC is used as the MILP solver through PuLP.
+
+The computational experiments use CBC with:
+
+```text
+threads = 1
+relative MIP gap = 0
+time mode = elapsed
+```
+
+A local Python or Conda environment is recommended.
+
+Environment directories such as `.conda/`, if present in a development copy of
+the repository, are machine-specific and should not be treated as portable
+dependencies.
 
 ---
 
-## Expected dataset structure
+## 3. Dataset structure
 
-The code expects a dataset folder called `licks_dataset_sampling/` with at least the following structure:
+The MusicXML lick dataset is stored under:
 
 ```text
 licks_dataset_sampling/
-  FMS/
-    regular/
-      fast/
-      moderate/
-      slow/
-    repetition/
-      fast/
-      moderate/
-      slow/
-    repetition_with_pause/
-      fast/
-      moderate/
-    with_pause/
-      fast/
-      moderate/
-      slow/
-  turnaround/
-  turnaround_with_pause/
-solutions/
 ```
 
-Each leaf folder contains MusicXML `.xml` lick files.
+with the general organization:
 
-The speed/profile convention used by the selector is:
+```text
+licks_dataset_sampling/
+├── FMS/
+│   ├── regular/
+│   │   ├── fast/
+│   │   ├── moderate/
+│   │   └── slow/
+│   ├── repetition/
+│   │   ├── fast/
+│   │   ├── moderate/
+│   │   └── slow/
+│   ├── repetition_with_pause/
+│   │   ├── fast/
+│   │   └── moderate/
+│   └── with_pause/
+│       ├── fast/
+│       ├── moderate/
+│       └── slow/
+├── turnaround/
+└── turnaround_with_pause/
+```
+
+Each leaf directory contains MusicXML `.xml` files.
+
+The speed/profile parameter `SMF` is coded as:
 
 ```text
 SMF = 0  -> Slow
@@ -93,328 +131,342 @@ SMF = 1  -> Moderate
 SMF = 2  -> Fast
 ```
 
-Turnaround folders are not speed-specific and are therefore available to all three profiles.
+Turnaround licks are not speed-specific and are therefore eligible for all
+three profiles.
 
 ---
 
-## Lick representation
+## 4. Lick representation and classification
 
-Each MusicXML file is classified by `lick_classification()` and represented internally as:
+Each MusicXML file is parsed by `lick_classification()` and represented
+internally as:
 
 ```python
 [first_note, last_note, classes, duration_in_bars, file_path]
 ```
 
-The classes are:
+The classification system is:
 
-- **C1**: repetition
-- **C2**: ends with a rest of duration ≤ 1 beat
-- **C3**: ends with a rest of duration > 1 beat
-- **C4**: ends with a rest of duration > 2 beats
-- **C5**: starts with a rest of duration ≤ 1 beat
-- **C6**: starts with a rest of duration > 1 beat
-- **C7**: starts with a rest of duration > 2 beats
-- **C8**: turnaround
-- **C9**: regular
+```text
+C1  repetition
 
-A lick can belong to more than one category. For example, a turnaround can also be pause-related.
+C2  ends with a rest of duration <= 1 beat
+C3  ends with a rest of duration > 1 beat
+C4  ends with a rest of duration > 2 beats
+
+C5  starts with a rest of duration <= 1 beat
+C6  starts with a rest of duration > 1 beat
+C7  starts with a rest of duration > 2 beats
+
+C8  turnaround
+C9  regular
+```
+
+A lick may belong to more than one category.
+
+For example, a turnaround lick may also be pause-related.
 
 ### Duration
 
-The current model assumes:
+The model assumes:
 
 ```text
 C8 turnaround -> 2 bars
 all other licks -> 1 bar
 ```
 
-Therefore, a 12-bar solution containing exactly one turnaround consists of:
+Consequently, a 12-bar solution with exactly one turnaround contains:
 
 ```text
-10 one-bar licks + 1 two-bar turnaround = 12 bars
-```
-
-or 11 actual licks in total.
-
----
-
-## `label_chosen_licks.py` — sampling and classification
-
-### `select_N_lick_samples(n, SMF)`
-
-The selector constructs a candidate set of exactly `n` **actual musical licks**.
-
-There are no longer any sampled licks reserved as artificial first or last nodes. Start and end conditions are handled inside the optimization model using separate dummy nodes.
-
-The candidate pool contains the relevant Slow, Moderate, or Fast licks together with the turnaround folders.
-
-Sampling is performed without replacement.
-
-Because arbitrary random candidate sets can occasionally make the MILP structurally infeasible, the selector performs feasibility-aware rejection sampling:
-
-1. draw a candidate set of size `n`;
-2. test whether the set is capable of satisfying the fixed structural constraints;
-3. accept it if feasible;
-4. otherwise redraw another set of size `n`.
-
-The feasibility test accounts for:
-
-- total duration of 12 bars;
-- exactly one turnaround;
-- at most one repetition lick;
-- at most three pause-related licks;
-- overlaps among lick categories.
-
-Thus the experiment samples uniformly from candidate sets **conditional on structural feasibility**.
-
-This prevents candidate-generation artifacts from being confused with optimization failures.
-
-### `lick_classification()`
-
-The classifier parses the MusicXML file and determines:
-
-- first note/rest;
-- last note/rest;
-- C1–C9 membership;
-- duration in bars;
-- original file path.
-
----
-
-## `cost_matrix_construction.py` — transition scoring
-
-The transition-cost matrix contains the cost of placing lick `j` immediately after lick `i`.
-
-```python
-p[i][j]
-```
-
-Costs are assigned according to the transition rules implemented in the project.
-
-Important interpretation:
-
-- lower cost is better;
-- negative values represent favorable transitions under the scoring system;
-- the optimization therefore **minimizes** total transition cost.
-
-Diagonal/self-transitions are not used as valid musical transitions.
-
----
-
-## `optimization.py` — MILP formulation
-
-The optimization model searches for a single ordered sequence of actual licks.
-
-### Dummy source and sink
-
-Two additional vertices are created internally:
-
-```text
-source -> selected musical licks -> sink
-```
-
-These are **dummy boundary nodes**.
-
-They:
-
-- do not correspond to MusicXML files;
-- have no musical duration;
-- are not part of the sampled candidate set;
-- are not returned in the final musical sequence;
-- are not exported to MusicXML.
-
-If `L` candidate licks are sampled, all `L` remain genuine candidate musical licks.
-
----
-
-## Decision variables
-
-For actual candidate lick `i`:
-
-```text
-y[i] = 1 if lick i is selected
-```
-
-For permitted directed arcs:
-
-```text
-x[i,j] = 1 if arc i -> j is selected
-```
-
-The graph also contains arcs involving the dummy source and sink for path construction.
-
----
-
-## Objective
-
-The model minimizes total transition cost:
-
-```text
-min Σ p[i][j] x[i,j]
-```
-
-Only transitions between actual musical licks contribute musical transition cost. Dummy boundary arcs do not represent lick-to-lick musical transitions.
-
-Lower objective values indicate better solutions under the implemented cost system.
-
----
-
-## Main structural constraints
-
-### Single path
-
-The dummy source has exactly one outgoing arc:
-
-```text
-source -> first actual lick
-```
-
-The dummy sink has exactly one incoming arc:
-
-```text
-last actual lick -> sink
-```
-
-Selected actual licks have matching incoming and outgoing flow.
-
----
-
-### Fixed 12-bar duration
-
-For experiments on 12-bar blues:
-
-```text
-b = 12
-```
-
-and the model enforces:
-
-```text
-Σ duration[i] * y[i] = 12
-```
-
-All actual selected licks are included in this duration calculation.
-
----
-
-### Repetition limit
-
-At most one selected lick can belong to C1:
-
-```text
-number of repetition licks <= 1
-```
-
----
-
-### Pause-related limit
-
-At most three selected licks may belong to C2–C7:
-
-```text
-number of pause-related licks <= 3
-```
-
-Pause detection uses:
-
-```python
-any(
-    code in licks_list[i][2]
-    for code in ("C2", "C3", "C4", "C5", "C6", "C7")
-)
-```
-
----
-
-### Exactly one turnaround
-
-The model explicitly requires:
-
-```text
-number of selected C8 licks = 1
-```
-
-The unique turnaround must also be the final actual musical lick:
-
-```text
-turnaround -> dummy sink
-```
-
-The first actual lick cannot be a turnaround.
-
-Consequently, with `b = 12`, a feasible final solo normally contains:
-
-```text
-10 one-bar non-turnaround licks
+10 one-bar licks
 +
 1 two-bar turnaround
 =
 12 bars
 ```
 
+or 11 actual musical licks.
+
 ---
 
-## Subtour elimination
+## 5. Candidate sampling
 
-Flow constraints alone can produce disconnected cycles in addition to the source-to-sink path.
+Candidate sets are generated by `select_N_lick_samples()`.
 
-The solver therefore uses iterative subtour elimination.
+All `L` sampled elements are genuine musical licks. Artificial source and sink
+nodes are not drawn from the dataset; they are created internally by the
+optimization model.
 
-After each MILP solve:
+Sampling is performed without replacement from the appropriate profile-specific
+pool together with the turnaround directories.
 
-1. extract the source-to-sink path;
+Because an arbitrary random sample need not admit a structurally feasible
+12-bar solution, the selector uses feasibility-aware rejection sampling:
+
+1. draw a candidate set of size `L`;
+2. check whether the set is capable of satisfying the relevant structural
+   constraints;
+3. accept the sample if structurally feasible;
+4. otherwise redraw.
+
+For the baseline experiment, structural feasibility is evaluated using:
+
+```text
+total bars = 12
+maximum repetition licks r = 1
+maximum pause-related licks s = 3
+exactly one turnaround in the solution
+```
+
+For the parameter-sensitivity experiments, the feasibility check uses the
+corresponding values of `r` and `s`.
+
+Thus candidate sets are sampled conditional on structural feasibility rather
+than by forcing specific musical licks into predefined positions.
+
+---
+
+## 6. Transition-cost matrix
+
+`cost_matrix_construction.py` builds the deterministic transition-cost matrix
+
+```python
+p[i][j]
+```
+
+representing the cost of placing lick `j` immediately after lick `i`.
+
+Transition values are determined by the rule-based scoring system implemented
+in the project.
+
+The objective is minimized, so:
+
+```text
+lower objective value = better
+more negative objective value = better
+```
+
+The objective should therefore not be interpreted as a score for which larger
+values are preferable.
+
+---
+
+## 7. MILP formulation
+
+The main optimization routine is implemented in:
+
+```text
+optimization.py
+```
+
+The optimization problem selects and orders actual musical licks while
+satisfying global structural constraints.
+
+The relevant experimental parameters include:
+
+```text
+b = target duration in bars
+r = maximum number of repetition licks
+s = maximum number of pause-related licks
+```
+
+The baseline model uses:
+
+```text
+b = 12
+r = 1
+s = 3
+```
+
+### Dummy source and sink
+
+The optimizer creates two internal boundary nodes:
+
+```text
+dummy source
+     |
+     v
+selected musical licks
+     |
+     v
+dummy sink
+```
+
+These nodes:
+
+- do not correspond to MusicXML files;
+- have no musical duration;
+- are not part of the sampled candidate set;
+- are removed from the returned musical sequence;
+- are never exported to MusicXML.
+
+If `L` candidate licks are sampled, all `L` remain genuine candidate musical
+licks.
+
+---
+
+## 8. Decision variables
+
+For each actual candidate lick `i`:
+
+```text
+y[i] = 1 if lick i is selected
+```
+
+For each permitted directed arc:
+
+```text
+x[i,j] = 1 if transition i -> j is selected
+```
+
+Additional arcs connect the dummy source and sink to the musical path.
+
+---
+
+## 9. Objective function
+
+The MILP minimizes total transition cost:
+
+```text
+min Σ p[i][j] x[i,j]
+```
+
+Only transitions between actual musical licks carry musical transition costs.
+
+Dummy source/sink arcs are structural rather than musical transitions.
+
+---
+
+## 10. Main structural constraints
+
+### 10.1 Path structure
+
+The dummy source has exactly one outgoing arc and the dummy sink exactly one
+incoming arc.
+
+Selected musical licks have consistent incoming and outgoing flow.
+
+The final solution must form one connected source-to-sink path.
+
+### 10.2 Fixed duration
+
+For the experiments:
+
+```text
+b = 12
+```
+
+and:
+
+```text
+Σ duration[i] y[i] = 12
+```
+
+### 10.3 Repetition limit
+
+At most `r` selected licks may belong to C1:
+
+```text
+number of selected repetition licks <= r
+```
+
+The baseline value is:
+
+```text
+r = 1
+```
+
+### 10.4 Pause-related limit
+
+At most `s` selected licks may belong to C2-C7:
+
+```text
+number of selected pause-related licks <= s
+```
+
+The baseline value is:
+
+```text
+s = 3
+```
+
+Pause-related membership is determined by whether any of C2-C7 is present in
+the lick's classification.
+
+### 10.5 Turnaround
+
+The model requires exactly one selected turnaround lick:
+
+```text
+number of selected C8 licks = 1
+```
+
+The turnaround must be the final actual musical lick before the dummy sink.
+
+The first actual musical lick cannot be a turnaround.
+
+---
+
+## 11. Iterative subtour elimination
+
+Flow constraints alone can admit disconnected cycles.
+
+The optimizer therefore applies iterative subtour elimination.
+
+After each MILP solution:
+
+1. recover the source-to-sink component;
 2. detect disconnected cycles;
-3. add a subtour-elimination constraint for each detected cycle;
-4. solve the strengthened MILP again;
-5. repeat until no subtours remain.
+3. add a vertex-set subtour-elimination inequality for each detected cycle;
+4. solve the strengthened model again;
+5. repeat until a single connected path remains.
 
-For a detected vertex set `S`, the added inequality is of the form:
+For a detected vertex set `S`, the added inequality has the form:
 
 ```text
 Σ x[i,j] <= |S| - 1
 ```
 
-for arcs contained entirely in `S`.
+for arcs entirely contained in `S`.
 
-The reported `subtours_count` is the cumulative number of individual subtours detected and eliminated across all solve rounds.
+The reported subtour count is the cumulative number of subtours detected across
+all optimization rounds.
 
----
-
-## Optimality and solver time limit
-
-Experimental runs require a **proven optimum**.
-
-PuLP/CBC can sometimes return a feasible incumbent when the solver reaches its time limit without proving optimality. Such a solution is not treated as optimal.
-
-The experiments currently use a cumulative per-instance wall-clock limit of:
-
-```python
-MAX_TOTAL_TIME = 300
-```
-
-seconds.
-
-If CBC reaches the time limit without proving optimality, the observation is recorded as:
-
-```text
-TIMEOUT
-```
-
-rather than as a program error.
-
-A genuine infeasibility or unexpected implementation failure remains:
-
-```text
-ERROR
-```
-
-This distinction is important in the computational experiments because difficult instances are themselves part of the observed solver behavior.
+The reported optimization time is cumulative across those rounds.
 
 ---
 
-## Returned solution
+## 12. Solver status and time limits
 
-`optimize()` returns:
+Experimental observations require a proven optimum.
+
+CBC may occasionally reach the time limit while holding a feasible incumbent.
+Such an incumbent is not treated as a proven optimum.
+
+The definitive baseline experiment uses a cumulative limit of:
+
+```text
+300 seconds
+```
+
+per sampled instance.
+
+Run statuses are:
+
+```text
+OK       proven optimum obtained
+TIMEOUT  time limit reached without proof of optimality
+ERROR    genuine infeasibility or unexpected program failure
+```
+
+TIMEOUT observations are retained as part of the computational experiment.
+They are not silently replaced by newly sampled instances.
+
+---
+
+## 13. Returned solution
+
+A successful call to the optimizer returns information equivalent to:
 
 ```python
 (
@@ -426,80 +478,658 @@ This distinction is important in the computational experiments because difficult
 )
 ```
 
-Both:
+The returned vertex sequence and file-path sequence contain actual musical licks
+only.
 
-```python
-graph_path_vertices_ordered
-```
+The dummy source and sink are removed before the result is returned.
 
-and:
+Successful solutions are checked for consistency, including:
 
-```python
-file_paths_for_the_ordered_licks_in_the_solution
-```
-
-contain **actual musical licks only**.
-
-The dummy source and sink are removed before the solution is returned.
-
-The optimizer also performs consistency checks on successful solutions, including:
-
-- total musical duration equals `b`;
+- total duration equals `b`;
 - exactly one turnaround is selected;
-- the turnaround is the last actual lick;
-- returned vertices correspond to actual candidates;
-- dummy nodes do not leak into MusicXML processing.
+- the turnaround is the final musical lick;
+- returned vertices correspond to sampled candidates;
+- dummy nodes do not enter MusicXML post-processing.
 
 ---
 
-## `post_processing.py` — MusicXML merging
+## 14. MusicXML post-processing
 
-`post_process()` receives the ordered paths of the selected actual lick files.
+`post_processing.py` receives the optimized sequence of MusicXML file paths and
+merges their measures into a single `score-partwise` MusicXML document.
 
-It merges their MusicXML measures into one `score-partwise` document.
-
-The measures are:
+Measures are:
 
 - appended in optimized order;
 - renumbered sequentially.
 
-Only actual lick files are passed to this stage. The dummy source and sink exist only inside the MILP formulation.
-
----
-
-## Running a single generated solo
-
-A standard end-to-end run follows the sequence:
+Typical MusicXML outputs are stored under:
 
 ```text
-candidate generation
-        ↓
-classification
-        ↓
-cost matrix
-        ↓
-MILP optimization
-        ↓
-subtour elimination
-        ↓
-ordered actual lick files
-        ↓
-MusicXML post-processing
+solutions/
 ```
 
-Depending on the version of `main.py`, run:
+Only actual musical lick files are passed to this stage.
 
-```bash
-python main.py
+---
+
+# Computational experiments
+
+## 15. Definitive baseline scalability experiment
+
+The main scalability experiment studies seven profile/candidate-set
+configurations:
+
+| Profile | SMF | Candidate-set sizes L |
+|---|---:|---|
+| Slow | 0 | 32, 43 |
+| Moderate | 1 | 32, 62, 160 |
+| Fast | 2 | 32, 62 |
+
+Each configuration contains:
+
+```text
+100 independently sampled candidate instances
+```
+
+giving:
+
+```text
+7 configurations x 100 runs = 700 observations
+```
+
+The baseline model parameters are:
+
+```text
+b = 12
+r = 1
+s = 3
+```
+
+The definitive run-level experiment is stored under:
+
+```text
+experiment_final/
+```
+
+The main run-level table is:
+
+```text
+experiment_final/run_status.csv
+```
+
+and individual checkpoints are stored under:
+
+```text
+experiment_final/runs/
+```
+
+The definitive experiment contains:
+
+```text
+693 OK
+6 TIMEOUT
+1 ERROR
+```
+
+The TIMEOUT and ERROR observations occur in the largest Moderate configuration
+(`L = 160`).
+
+They are retained rather than resampled.
+
+---
+
+## 16. Experimental checkpoints
+
+Every simulation is saved separately as a `.pkl` checkpoint.
+
+A checkpoint preserves information including:
+
+```text
+profile
+SMF
+L
+run number
+random seed
+sampled candidate licks
+optimization status
+ordered solution
+objective value
+subtour count
+runtime
+error information
+```
+
+This allows interrupted experiments to resume without recomputing completed
+instances.
+
+It also permits exact candidate sets to be reused in subsequent sensitivity
+experiments.
+
+---
+
+## 17. Deterministic seeds
+
+The experimental runner uses deterministic seeds derived from:
+
+```text
+base seed
+SMF
+candidate-set size L
+run number
+```
+
+Both Python's `random` module and NumPy are seeded before candidate generation.
+
+This makes a particular sampled instance reproducible independently of the
+order in which the full experimental grid is executed.
+
+---
+
+# Parameter-sensitivity experiment
+
+## 18. Purpose
+
+The second experiment evaluates how the repetition and pause constraints affect
+solution quality and computational behavior.
+
+The parameters are:
+
+```text
+r = maximum number of repetition licks
+s = maximum number of pause-related licks
+```
+
+Five settings are examined:
+
+```text
+(r,s)
+
+(1,3)   baseline
+(2,3)
+(3,3)
+(1,4)
+(1,5)
+```
+
+This gives two one-factor-at-a-time comparisons:
+
+```text
+r sensitivity:
+r = 1, 2, 3
+s fixed at 3
+
+s sensitivity:
+s = 3, 4, 5
+r fixed at 1
 ```
 
 ---
 
-## Computational experiments
+## 19. Representative configurations
 
-The scaling experiments vary candidate-set size `L` across three profiles.
+Sensitivity is evaluated for three representative configurations:
 
-Current experimental grid:
+| Profile | SMF | L |
+|---|---:|---:|
+| Slow | 0 | 43 |
+| Moderate | 1 | 62 |
+| Fast | 2 | 62 |
+
+For every profile, the same 100 sampled candidate instances are solved under
+all five parameter settings.
+
+The experiment is therefore paired.
+
+The baseline `(r,s) = (1,3)` observations are reused rather than solved again.
+
+The complete design contains:
+
+```text
+3 profiles
+x 100 candidate instances
+x 5 parameter settings
+=
+1,500 profile-setting observations
+```
+
+Of these:
+
+```text
+300 are reused baseline observations
+1,200 are new alternative-parameter solves
+```
+
+All 1,500 observations in the final sensitivity dataset reached proven
+optimality.
+
+---
+
+## 20. Sensitivity experiment files
+
+The Moderate sensitivity experiment is generated with:
+
+```text
+run_rs_sensitivity.py
+```
+
+The Slow/Fast extension is generated with the corresponding all-profile
+sensitivity runner.
+
+The final combined dataset is:
+
+```text
+rs_sensitivity_results/
+└── rs_sensitivity_all_profiles.csv
+```
+
+This file contains the 1,500 observations used in the final all-profile
+parameter-sensitivity analysis.
+
+---
+
+# Statistical analysis
+
+## 21. Statistical workflow
+
+The repository contains a statistical-analysis pipeline addressing:
+
+- standard errors;
+- medians;
+- 95% percentile-bootstrap confidence intervals;
+- Shapiro-Wilk normality tests;
+- skewness;
+- excess kurtosis;
+- Q-Q diagnostics where generated by the dedicated normality script;
+- Tukey `1.5 x IQR` outlier diagnostics;
+- nonparametric significance tests;
+- effect sizes;
+- multiple-testing correction;
+- timeout/censoring-aware runtime summaries.
+
+Principal helper scripts include:
+
+```text
+statistical_analysis.py
+step5_confidence_intervals.py
+step6_normality_checks.py
+step7_outlier_analysis_fixed.py
+step8_significance_L_fixed.py
+step9_significance_rs.py
+step10_timeout_censoring.py
+```
+
+Statistical outputs are stored primarily under:
+
+```text
+statistical_analysis_results/
+```
+
+---
+
+## 22. Baseline candidate-set-size inference
+
+Because the observed distributions are strongly nonnormal, nonparametric
+procedures are used.
+
+For profiles with two candidate-set sizes:
+
+```text
+Slow
+Fast
+```
+
+comparisons use two-sided Mann-Whitney U tests.
+
+For the three-level Moderate profile:
+
+```text
+L = 32, 62, 160
+```
+
+the analysis uses:
+
+```text
+Kruskal-Wallis omnibus test
+followed by
+pairwise Mann-Whitney U tests
+```
+
+Holm correction is applied to multiple pairwise comparisons.
+
+Effect sizes are also reported.
+
+---
+
+## 23. Parameter-sensitivity inference
+
+Because exactly the same candidate instances are evaluated under each parameter
+setting, the sensitivity analysis is paired.
+
+For each profile and outcome, the analysis uses:
+
+```text
+Friedman omnibus test
+```
+
+followed, where appropriate, by:
+
+```text
+paired Wilcoxon signed-rank tests
+```
+
+with Holm correction.
+
+Reported effect sizes include:
+
+```text
+Kendall's W
+matched-pairs rank-biserial effect size
+```
+
+The three principal outcomes are:
+
+```text
+optimization time
+number of subtours
+objective quality
+```
+
+For quality:
+
+```text
+more negative = better
+```
+
+For pairwise differences:
+
+```text
+delta = setting 2 - setting 1
+```
+
+Therefore:
+
+```text
+negative quality delta -> improved objective
+negative runtime delta -> faster solution
+```
+
+---
+
+## 24. Outlier analysis
+
+Outliers are identified using Tukey's rule:
+
+```text
+lower fence = Q1 - 1.5 x IQR
+upper fence = Q3 + 1.5 x IQR
+```
+
+Outlier diagnostics are descriptive.
+
+Flagged observations are not automatically removed from the principal
+statistical analyses because they represent genuine observed computational
+behavior unless independently shown to be measurement or implementation
+errors.
+
+---
+
+## 25. Timeout-aware runtime analysis
+
+A timeout does not imply that the true time required to reach a proven optimum
+equals exactly 300 seconds.
+
+Baseline TIMEOUT observations are therefore treated as right-censored at the
+time limit.
+
+The censoring-aware workflow includes:
+
+```text
+Kaplan-Meier summaries
+restricted mean time to proven optimality (RMST)
+```
+
+For baseline candidate-set-size comparisons, log-rank comparisons are available
+where appropriate.
+
+The paired `r/s` sensitivity experiment uses pairing-preserving procedures
+rather than independence-based log-rank inference.
+
+The final all-profile sensitivity experiment contains no TIMEOUT or ERROR
+observations.
+
+---
+
+# Reproducing the final all-profile sensitivity statistics
+
+## 26. Input dataset
+
+The final statistical rerun expects:
+
+```text
+rs_sensitivity_results/
+└── rs_sensitivity_all_profiles.csv
+```
+
+The file should contain:
+
+```text
+1,500 rows
+```
+
+corresponding to:
+
+```text
+Slow     L=43
+Moderate L=62
+Fast     L=62
+```
+
+with five `(r,s)` settings for 100 candidate instances per profile.
+
+---
+
+## 27. Required statistical helper modules
+
+The local analysis setup expects the following helper modules to be available
+directly under `statistical_analysis_results/` or otherwise importable by the
+rerun script:
+
+```text
+statistical_analysis.py
+step5_confidence_intervals.py
+step6_normality_checks.py
+step7_outlier_analysis_fixed.py
+step9_significance_rs.py
+step10_timeout_censoring.py
+```
+
+---
+
+## 28. Running the final sensitivity reanalysis
+
+From the project root:
+
+```bash
+python rerun_sensitivity_stats_all_profiles.py
+```
+
+The script detects the project root, reads:
+
+```text
+rs_sensitivity_results/rs_sensitivity_all_profiles.csv
+```
+
+and writes the final results to:
+
+```text
+statistical_analysis_results/
+└── sensitivity_all_profiles_analysis/
+```
+
+A ZIP archive of the outputs is also generated as:
+
+```text
+statistical_analysis_results/
+└── sensitivity_all_profiles_analysis_outputs.zip
+```
+
+A successful run should report:
+
+```text
+Rows = 1500
+
+Normality rejected: 45 / 45
+
+Outlier combinations: 42 / 45
+Total flagged observations = 321
+
+Timeouts = 0
+Errors = 0
+```
+
+It will also print the profile-stratified Friedman omnibus tests.
+
+---
+
+## 29. Principal all-profile sensitivity results
+
+Relaxing the repetition limit `r` produces strong improvements in objective
+quality across all three representative profiles.
+
+Friedman effect sizes for objective quality are approximately:
+
+```text
+Slow      Kendall's W = 0.955
+Moderate  Kendall's W = 0.990
+Fast      Kendall's W = 0.799
+```
+
+All three omnibus tests are statistically significant.
+
+Computational effects are more profile-specific.
+
+For runtime, the omnibus effect of `r` is:
+
+```text
+Slow      not significant
+Moderate  significant
+Fast      significant
+```
+
+For subtour counts, the effect of `r` is:
+
+```text
+Slow      significant
+Moderate  not significant
+Fast      significant
+```
+
+Relaxing the pause limit `s` significantly affects objective quality in all
+three profiles, although its effect is smaller than that of `r`.
+
+For `s`, subtour counts do not differ significantly in any profile.
+
+Runtime differs across `s` values only in the Slow omnibus test; the
+Holm-adjusted Slow pairwise runtime contrasts are not individually significant.
+
+---
+
+# Repository organization
+
+## 30. Simplified project tree
+
+The main reproducibility-related structure is:
+
+```text
+musicoptimization-main/
+│
+├── main.py
+├── label_chosen_licks.py
+├── cost_matrix_construction.py
+├── optimization.py
+├── post_processing.py
+│
+├── licks_dataset_sampling/
+│
+├── experiment_final/
+│   ├── runs/
+│   └── run_status.csv
+│
+├── run_rs_sensitivity.py
+├── run_rs_sensitivity_slow_fast.py
+│
+├── rs_sensitivity_results/
+│   ├── runs/
+│   └── rs_sensitivity_all_profiles.csv
+│
+├── rerun_sensitivity_stats_all_profiles.py
+│
+├── statistical_analysis.py
+│
+├── statistical_analysis_results/
+│   ├── step5_confidence_intervals.py
+│   ├── step6_normality_checks.py
+│   ├── step7_outlier_analysis_fixed.py
+│   ├── step8_significance_L_fixed.py
+│   ├── step9_significance_rs.py
+│   ├── step10_timeout_censoring.py
+│   │
+│   └── sensitivity_all_profiles_analysis/
+│
+└── solutions/
+```
+
+The exact repository may also contain intermediate analysis directories,
+diagnostic scripts, smoke-test outputs, archived helper bundles, or development
+artifacts.
+
+These files are retained for development provenance but are not part of the
+canonical reproduction path described above.
+
+---
+
+# Recommended reproducibility workflow
+
+## 31. Reproducing the published statistical analysis from saved results
+
+If the objective is only to reproduce the final sensitivity statistics, there
+is no need to rerun the MILP experiments.
+
+Use:
+
+```bash
+python rerun_sensitivity_stats_all_profiles.py
+```
+
+with the existing:
+
+```text
+rs_sensitivity_results/rs_sensitivity_all_profiles.csv
+```
+
+This is the fastest route for verifying the statistical tables.
+
+---
+
+## 32. Reproducing the sensitivity experiment
+
+To regenerate the sensitivity data:
+
+1. retain the original baseline candidate instances;
+2. reuse exactly the same sampled `licks_list` for all parameter settings;
+3. run the five `(r,s)` settings;
+4. reuse `(1,3)` baseline results rather than resampling;
+5. combine Slow, Moderate, and Fast into the 1,500-row master dataset;
+6. run `rerun_sensitivity_stats_all_profiles.py`.
+
+The pairing must be preserved.
+
+---
+
+## 33. Reproducing the baseline experiment
+
+The definitive baseline design is:
 
 ```python
 EXPERIMENTS = [
@@ -509,248 +1139,182 @@ EXPERIMENTS = [
 ]
 ```
 
-For the full study:
+with:
 
-```python
+```text
 NUM_RUNS = 100
-```
-
-giving:
-
-```text
-7 configurations x 100 runs = 700 instances
-```
-
-Each run uses a fresh feasible candidate set.
-
-Recorded quantities include:
-
-- wall-clock optimization time;
-- number of subtours eliminated;
-- objective value;
-- completion status.
-
-Typical statuses are:
-
-```text
-OK
-TIMEOUT
-ERROR
-```
-
----
-
-## Checkpoints and interrupted experiments
-
-Each simulation is stored separately as a `.pkl` checkpoint.
-
-This allows a long experiment to be interrupted and restarted without losing completed runs.
-
-A resumed experiment can therefore produce messages such as:
-
-```text
-Run 001/100 checkpoint -> OK
-Run 002/100 checkpoint -> OK
-...
-```
-
-rather than solving those observations again.
-
-The checkpoint normally preserves information such as:
-
-```text
-profile
-SMF
-L
-run number
-random seed
-sampled licks
-ordered solution
-objective value
-subtour count
-runtime
-status
-error information
-```
-
-This is particularly useful for the largest configuration, `Moderate, L=160`, where occasional instances can be substantially more computationally demanding.
-
----
-
-## Treatment of timeouts in experiments
-
-Runs that fail to reach proven optimality within the fixed 300-second cumulative limit are not replaced by newly sampled instances.
-
-They are preserved as `TIMEOUT` observations.
-
-For example, a final experiment may report:
-
-```text
-successful = 98
-timeouts = 2
-errors = 0
-```
-
-Objective-value and subtour statistics should be computed from runs for which an optimum was proven.
-
-The timeout frequency should also be reported because it is part of the computational behavior of the formulation.
-
----
-
-## Reproducibility
-
-The experiment runner uses deterministic seeds derived from:
-
-```text
-base seed
-profile / SMF
-candidate-set size L
-run number
-```
-
-This allows a particular experiment instance to be reproduced without resampling a different candidate set.
-
-Both Python's `random` module and NumPy are seeded before candidate generation.
-
-For ad hoc runs, a simple fixed seed can also be used:
-
-```python
-import random
-import numpy as np
-
-random.seed(0)
-np.random.seed(0)
-```
-
----
-
-## Practical configuration parameters
-
-Frequently adjusted parameters include:
-
-### Number of candidate licks
-
-```python
-L
-```
-
-Typical values used in the experiments are:
-
-```text
-Slow:      32, 43
-Moderate:  32, 62, 160
-Fast:      32, 62
-```
-
-### Target duration
-
-```python
-b = 12
-```
-
-### Repetition limit
-
-```python
+MAX_TOTAL_TIME = 300 seconds
 r = 1
-```
-
-### Pause-related limit
-
-```python
 s = 3
+CBC threads = 1
+relative MIP gap = 0
 ```
 
-### Cumulative solver limit
+Development versions of `main.py` may occasionally be configured for a
+diagnostic or follow-up experiment rather than this entire grid.
 
-```python
-MAX_TOTAL_TIME = 300
+Therefore, before launching a fresh 700-run experiment, verify:
+
+```text
+EXPERIMENTS
+NUM_RUNS
+MAX_TOTAL_TIME
+OUTPUT_DIR
+r
+s
 ```
 
-seconds per sampled instance.
-
-### Maximum subtour-cut rounds
-
-A separate defensive limit is also maintained for the iterative subtour-elimination procedure.
+Do not overwrite the archived definitive experiment unless this is explicitly
+intended.
 
 ---
 
-## Important implementation notes
+# Interpretation and reporting conventions
 
-### Candidate-set feasibility
+## 34. Objective quality
 
-Randomly drawing `L` licks does not automatically imply that a 12-bar solution satisfying all role constraints exists.
-
-For example, a small candidate set dominated by pause-related licks may be unable to provide:
+The objective is a cost:
 
 ```text
-10 non-turnaround one-bar licks
-```
-
-while respecting:
-
-```text
-pause-related licks <= 3
-```
-
-For this reason, candidate generation rejects structurally infeasible candidate sets before optimization.
-
----
-
-### Feasible incumbent is not necessarily optimal
-
-When CBC reaches its time limit, it may have found a feasible integer solution without having proved that it is optimal.
-
-The code therefore distinguishes:
-
-```text
-proven optimal solution
-```
-
-from:
-
-```text
-integer-feasible incumbent
-```
-
-and only the former receives status `OK`.
-
----
-
-### Computational variability
-
-MILP solution time can vary substantially even between instances with the same `L`.
-
-In particular, large `Moderate, L=160` instances may require many successive MILP solves and subtour cuts, producing a heavy right tail in runtime.
-
-For this reason, experiments report both means and medians and retain timeout information.
-
----
-
-## Repository workflow
-
-The intended workflow is:
-
-```text
-Data Input
-    ↓
-Lick Classification
-    ↓
-Feasible Candidate Sampling
-    ↓
-Transition Cost Matrix
-    ↓
-MILP Optimization
-    ↓
-Iterative Subtour Elimination
-    ↓
-Ordered Actual Lick Sequence
-    ↓
-MusicXML Post-processing / Export
+smaller = better
+more negative = better
 ```
 
 ---
 
-## Contact / authors
+## 35. Solved-only statistics
 
-- **Sergio Bonini** — mrsergiobonini@gmail.com
-- **Sergio Da Silva** - professorsergiodasilva@gmail.com
+Objective value, subtour count, and observed solution time are meaningful as
+complete outcomes only when a proven optimum was obtained.
+
+Whenever descriptive statistics exclude TIMEOUT observations, they should be
+described as:
+
+```text
+solved-only
+```
+
+rather than as statistics for all sampled instances.
+
+---
+
+## 36. Timeouts
+
+TIMEOUT observations must not be replaced with the numerical value `300` in
+ordinary runtime means as though the optimum were reached exactly at the time
+limit.
+
+Use the censoring-aware analysis for such observations.
+
+---
+
+## 37. Outliers
+
+Tukey outliers are retained unless there is independent evidence that an
+observation is erroneous.
+
+Large runtimes and large subtour counts can be genuine manifestations of
+instance-level computational difficulty.
+
+---
+
+# Optional MusicXML export
+
+Optimized sequences can be exported to MusicXML through the post-processing
+pipeline.
+
+Experiment runners may be configured to export only selected successful runs
+rather than all simulations.
+
+Exported MusicXML files are stored under:
+
+```text
+solutions/
+```
+
+or the corresponding experiment-export subdirectory.
+
+---
+
+# Development and noncanonical files
+
+The repository may contain files created during debugging and development, such
+as:
+
+```text
+smoke-test directories
+diagnostic scripts
+temporary output directories
+old experiment-result folders
+Python cache directories
+.DS_Store files
+local virtual environments
+portable helper bundles
+intermediate CSV files
+historical .pkl files
+```
+
+These are not required for interpreting the final experimental results.
+
+For reproduction, use the canonical directories:
+
+```text
+licks_dataset_sampling/
+experiment_final/
+rs_sensitivity_results/
+statistical_analysis_results/
+solutions/
+```
+
+and the scripts explicitly identified in this README.
+
+---
+
+# Reproducibility checklist
+
+For an exact computational reproduction:
+
+1. use the stored deterministic seeds;
+2. preserve the sampled candidate set for each run;
+3. do not replace TIMEOUT or ERROR observations with newly sampled instances;
+4. use CBC with one thread and zero relative MIP gap;
+5. use the same cumulative solver limit;
+6. preserve pairing in the `r/s` sensitivity experiment;
+7. interpret lower/more-negative objective values as better;
+8. retain genuine computational outliers;
+9. treat timeout observations as right-censored where appropriate;
+10. distinguish solved-only summaries from censoring-aware summaries.
+
+---
+
+# Authors
+
+**Sergio Bonini**  
+mrsergiobonini@gmail.com
+
+**Sergio Da Silva**  
+professorsergiodasilva@gmail.com
+
+---
+
+# License
+
+This project is distributed under the terms specified in the repository
+`LICENSE` file.
+
+---
+
+# Related study
+
+This repository accompanies the study:
+
+**MILP-Based Lick Sequencing for 12-Bar Blues Guitar Solos: An Empirical
+Scalability Study**
+
+The code, run-level experimental results, and statistical-analysis workflow are
+provided to support computational reproducibility.
+"""
+path = "/mnt/data/README_new.txt"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(text)
+print(f"Created {path} with {len(text.splitlines())} lines.")
