@@ -1,0 +1,20 @@
+Step 5 statistical protocol
+
+For each experimental configuration, means, sample standard deviations,
+standard errors, medians, and 95% confidence
+intervals were calculated for optimization time, subtour count, and
+objective value.
+
+Standard error:
+    SE = sample SD / sqrt(n)
+
+Confidence interval:
+    percentile bootstrap confidence interval for the mean
+    resamples = 10000
+    confidence level = 0.95
+    random seed = 20261002
+
+Only runs with Status == "OK" (proven optimality) contribute to the
+optimization-time, subtour, and objective-value estimates. TIMEOUT and
+ERROR observations are counted and reported separately rather than
+silently discarded or treated as optimal solutions.

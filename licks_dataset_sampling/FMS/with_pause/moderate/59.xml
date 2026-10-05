@@ -1,0 +1,153 @@
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 1.0 Partwise//EN" "/musicxml/partwise.dtd">
+<score-partwise>
+	<work/>
+	<identification><encoding><software>Guitar Pro 5</software>
+			<encoding-description>MusicXML 1.0</encoding-description>
+		</encoding>
+		<miscellaneous/>
+	</identification>
+	<part-list><score-part id="P1"><part-name>Pista 1</part-name>
+			<score-instrument id="P1-I1"><instrument-name/>
+			</score-instrument>
+			<midi-instrument id="P1-I1"><midi-channel>1</midi-channel>
+				<midi-program>25</midi-program>
+			</midi-instrument>
+		</score-part>
+	</part-list>
+	<part id="P1">
+		
+	<measure number="2">
+			<attributes><divisions>12</divisions>
+			</attributes>
+			<note><grace slash="yes" steal-time-previous="50%"/>
+				<pitch><step>D</step>
+					<octave>6</octave>
+				</pitch>
+				<voice>1</voice>
+				<type>16th</type>
+				<notations><slide type="start"/>
+					<technical><string>1</string>
+						<fret>10</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>E</step>
+					<octave>6</octave>
+				</pitch>
+				<duration>8</duration>
+				<voice>1</voice>
+				<type>quarter</type>
+				<time-modification><actual-notes>3</actual-notes>
+					<normal-notes>2</normal-notes>
+				</time-modification>
+				<notations><dynamics><f/>
+					</dynamics>
+					<slide type="stop"/>
+					<technical><string>1</string>
+						<fret>12</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>C</step>
+					<octave>6</octave>
+				</pitch>
+				<duration>8</duration>
+				<voice>1</voice>
+				<type>quarter</type>
+				<time-modification><actual-notes>3</actual-notes>
+					<normal-notes>2</normal-notes>
+				</time-modification>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>1</string>
+						<fret>8</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>D</step>
+					<octave>6</octave>
+				</pitch>
+				<duration>4</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<time-modification><actual-notes>3</actual-notes>
+					<normal-notes>2</normal-notes>
+				</time-modification>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>1</string>
+						<fret>10</fret>
+						<pull-off type="start">P</pull-off>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>C</step>
+					<octave>6</octave>
+				</pitch>
+				<duration>4</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<time-modification><actual-notes>3</actual-notes>
+					<normal-notes>2</normal-notes>
+				</time-modification>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>1</string>
+						<fret>8</fret>
+						<pull-off type="stop"/>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>A</step>
+					<octave>5</octave>
+				</pitch>
+				<duration>4</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<time-modification><actual-notes>3</actual-notes>
+					<normal-notes>2</normal-notes>
+				</time-modification>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>2</string>
+						<fret>10</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>C</step>
+					<octave>6</octave>
+				</pitch>
+				<duration>12</duration>
+				<voice>1</voice>
+				<type>quarter</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>1</string>
+						<fret>8</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>A</step>
+					<octave>5</octave>
+				</pitch>
+				<duration>6</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>2</string>
+						<fret>10</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><rest/>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>16th</type>
+				<time-modification><actual-notes>3</actual-notes>
+					<normal-notes>2</normal-notes>
+				</time-modification>
+			</note>
+		</measure>
+		</part>
+</score-partwise>

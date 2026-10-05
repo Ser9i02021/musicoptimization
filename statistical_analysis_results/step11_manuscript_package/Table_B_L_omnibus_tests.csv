@@ -1,0 +1,4 @@
+Profile,Metric,K_groups,N_total,H,p,Epsilon_squared,Significant_0.05
+Moderate,Time,3,293,178.39179365503787,<0.001,0.608,Yes
+Moderate,Subtours,3,293,3.703939466557149,0.157,0.006,No
+Moderate,Quality,3,293,239.1816707912558,<0.001,0.818,Yes

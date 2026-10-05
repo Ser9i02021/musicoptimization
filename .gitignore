@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+*.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Local environments / editors
+.conda/
+.vscode/
+
+# Development and smoke-test experiments
+experiment_final_160/
+experiment_final_smoke/
+experiment_final_smoke_*/
+experiment_results/
+experiment_results_smoke_*/
+
+# Historical intermediate candidate lists
+licks_list_*.pkl
+
+# Duplicate dataset archives
+licks_dataset.zip
+licks_dataset_sampling.zip
+
+# Temporary reproducibility bundles
+sensitivity_reanalysis_portable_bundle/
+sensitivity_reanalysis_portable_bundle.zip
+statistical_analysis_results/statistical_analysis_helper_scripts/
+statistical_analysis_results/statistical_analysis_helper_scripts.zip
+statistical_analysis_results/sensitivity_all_profiles_analysis_outputs.zip

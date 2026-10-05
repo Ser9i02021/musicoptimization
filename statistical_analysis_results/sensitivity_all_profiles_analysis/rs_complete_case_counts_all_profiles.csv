@@ -1,0 +1,19 @@
+Profile,SMF,L,Family,Metric,N_instances_available,N_complete_pairs,N_excluded_incomplete
+Fast,2,62,r sensitivity (s=3),Time,100,100,0
+Fast,2,62,r sensitivity (s=3),Subtours,100,100,0
+Fast,2,62,r sensitivity (s=3),Quality,100,100,0
+Fast,2,62,s sensitivity (r=1),Time,100,100,0
+Fast,2,62,s sensitivity (r=1),Subtours,100,100,0
+Fast,2,62,s sensitivity (r=1),Quality,100,100,0
+Moderate,1,62,r sensitivity (s=3),Time,100,100,0
+Moderate,1,62,r sensitivity (s=3),Subtours,100,100,0
+Moderate,1,62,r sensitivity (s=3),Quality,100,100,0
+Moderate,1,62,s sensitivity (r=1),Time,100,100,0
+Moderate,1,62,s sensitivity (r=1),Subtours,100,100,0
+Moderate,1,62,s sensitivity (r=1),Quality,100,100,0
+Slow,0,43,r sensitivity (s=3),Time,100,100,0
+Slow,0,43,r sensitivity (s=3),Subtours,100,100,0
+Slow,0,43,r sensitivity (s=3),Quality,100,100,0
+Slow,0,43,s sensitivity (r=1),Time,100,100,0
+Slow,0,43,s sensitivity (r=1),Subtours,100,100,0
+Slow,0,43,s sensitivity (r=1),Quality,100,100,0

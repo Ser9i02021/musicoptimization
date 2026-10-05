@@ -1,0 +1,27 @@
+Step 6 normality-check protocol
+
+For each experimental configuration, the distributions of:
+- optimization time,
+- number of subtours eliminated, and
+- optimal objective value
+
+were assessed using the Shapiro-Wilk test.
+
+Significance level:
+alpha = 0.05
+
+Interpretation:
+p < 0.05: reject the null hypothesis of normality.
+p >= 0.05: do not reject the null hypothesis of normality.
+
+Skewness and excess kurtosis are also reported as descriptive measures of
+distributional shape. A Q-Q plot against the normal distribution is generated
+for each configuration and outcome.
+
+Only runs with proven optimality (Status == "OK") are included in these
+normality checks. TIMEOUT and ERROR observations are not treated as observed
+optimal objective values or solution times.
+
+Failure to reject normality does not prove that a distribution is normal; it
+only indicates that the sample does not provide sufficient evidence to reject
+the normality assumption.

@@ -1,0 +1,43 @@
+Step 10 timeout and censoring protocol
+
+The computational experiment uses a fixed time limit of 300 s.
+
+A TIMEOUT therefore does not imply that the true time to proven optimality
+equals 300 s. Instead, it is treated as right-censored at
+300 s.
+
+Coding:
+    OK      = event observed (proven optimum reached)
+    TIMEOUT = right-censored at 300 s
+    ERROR   = excluded from survival analysis and reported separately
+
+Baseline L-scaling experiment:
+    Kaplan-Meier curves are used to describe the probability that a problem
+    instance has not yet reached proven optimality by time t.
+
+    Restricted mean time to proven optimality (RMST) is calculated through
+    tau = 300 s.
+
+    Pairwise L comparisons within each profile use two-sample log-rank tests.
+    Pairwise p-values within each profile are Holm corrected.
+
+Paired r/s sensitivity experiment:
+    Kaplan-Meier and RMST values are reported descriptively for each setting.
+
+    Because the same candidate instance is solved under every parameter
+    setting, independence-based log-rank tests are not used for inferential
+    comparisons among r/s settings.
+
+    Instead, pairwise censoring-aware sign tests preserve the pairing:
+        - if both settings solve, observed solution times are compared;
+        - if one solves and the other times out, the solved setting is known
+          to be faster under the common 300 s cap;
+        - two timeouts are treated as a tie;
+        - ERROR/missing pairs are excluded.
+
+    Exact two-sided binomial sign tests are applied to the non-tied pairs,
+    with Holm correction within the r family and within the s family.
+
+This analysis complements the solved-only runtime tests from Steps 8 and 9.
+It avoids treating censored TIMEOUT observations as if their exact runtime
+were known.

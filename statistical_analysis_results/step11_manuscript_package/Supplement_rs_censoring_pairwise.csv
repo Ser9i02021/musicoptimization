@@ -1,0 +1,7 @@
+Setting1,Setting2,N_matched,Setting1_faster,Setting2_faster,Ties,Excluded,N_informative,Setting2_win_fraction,p_raw,p_Holm,Significant_0.05,Family
+"r=1,s=3","r=2,s=3",100,37,63,0,0,100,0.63,0.0120329757253634,0.0240659514507269,Yes,r sensitivity (s=3)
+"r=1,s=3","r=3,s=3",100,33,67,0,0,100,0.67,0.0008737198369123,0.0026211595107371,Yes,r sensitivity (s=3)
+"r=2,s=3","r=3,s=3",100,41,59,0,0,100,0.59,0.0886260801140675,0.0886260801140675,No,r sensitivity (s=3)
+"r=1,s=3","r=1,s=4",100,57,43,0,0,100,0.43,0.1933479044956424,0.5800437134869273,No,s sensitivity (r=1)
+"r=1,s=3","r=1,s=5",100,51,49,0,0,100,0.49,0.920410762612822,1.0,No,s sensitivity (r=1)
+"r=1,s=4","r=1,s=5",100,50,50,0,0,100,0.5,1.0,1.0,No,s sensitivity (r=1)

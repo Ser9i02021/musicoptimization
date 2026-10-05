@@ -192,7 +192,14 @@ def _is_structurally_feasible(
     )
 
 
-def select_N_lick_samples(n: int, SMF: int, max_sampling_attempts: int = 10000):
+def select_N_lick_samples(
+    n: int,
+    SMF: int,
+    max_sampling_attempts: int = 10000,
+    total_bars: int = 12,
+    max_repetition: int = 1,
+    max_pause: int = 3,
+):
     if not isinstance(n, int) or n < 1:
         raise ValueError("n must be a positive integer.")
 
@@ -201,6 +208,19 @@ def select_N_lick_samples(n: int, SMF: int, max_sampling_attempts: int = 10000):
 
     if not isinstance(max_sampling_attempts, int) or max_sampling_attempts < 1:
         raise ValueError("max_sampling_attempts must be a positive integer.")
+
+    if not isinstance(total_bars, int) or isinstance(total_bars, bool) or total_bars <= 0:
+        raise ValueError("total_bars must be a positive integer.")
+
+    if (
+        not isinstance(max_repetition, int)
+        or isinstance(max_repetition, bool)
+        or max_repetition < 0
+    ):
+        raise ValueError("max_repetition must be a non-negative integer.")
+
+    if not isinstance(max_pause, int) or isinstance(max_pause, bool) or max_pause < 0:
+        raise ValueError("max_pause must be a non-negative integer.")
 
     speed = {0: "slow", 1: "moderate", 2: "fast"}[SMF]
 
@@ -261,11 +281,23 @@ def select_N_lick_samples(n: int, SMF: int, max_sampling_attempts: int = 10000):
     # Fail early if even the complete eligible pool cannot support the model's
     # structural constraints.  This distinguishes a dataset/configuration
     # problem from an unlucky random draw.
-    full_pool_classified = [_classify_cached(path) for path in candidate_pool]
-    if not _is_structurally_feasible(full_pool_classified):
+    full_pool_classified = [
+        _classify_cached(path)
+        for path in candidate_pool
+    ]
+
+    if not _is_structurally_feasible(
+        full_pool_classified,
+        total_bars=total_bars,
+        max_repetition=max_repetition,
+        max_pause=max_pause,
+    ):
         raise ValueError(
             f"The complete eligible pool for SMF={SMF} ({speed}) cannot satisfy "
-            "the 12-bar role/duration constraints."
+            f"the structural constraints "
+            f"(total_bars={total_bars}, "
+            f"max_repetition={max_repetition}, "
+            f"max_pause={max_pause})."
         )
 
     # Rejection sampling. random.sample() is uniform over size-n subsets, and
@@ -275,11 +307,18 @@ def select_N_lick_samples(n: int, SMF: int, max_sampling_attempts: int = 10000):
         sampled_paths = random.sample(candidate_pool, n)
         classified = [_classify_cached(path) for path in sampled_paths]
 
-        if _is_structurally_feasible(classified):
+        if _is_structurally_feasible(
+            classified,
+            total_bars=total_bars,
+            max_repetition=max_repetition,
+            max_pause=max_pause,
+        ):
             return classified
 
     raise RuntimeError(
         f"Unable to draw a structurally feasible sample of n={n} candidates "
-        f"for SMF={SMF} ({speed}) after {max_sampling_attempts} attempts. "
-        "Increase max_sampling_attempts or inspect the pool composition."
+        f"for SMF={SMF} ({speed}) after {max_sampling_attempts} attempts "
+        f"with total_bars={total_bars}, "
+        f"max_repetition={max_repetition}, "
+        f"max_pause={max_pause}."
     )

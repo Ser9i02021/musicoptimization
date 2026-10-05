@@ -1,0 +1,27 @@
+Step 7 outlier-analysis protocol
+
+Outliers were identified separately within each experimental configuration
+and outcome using Tukey's 1.5 x IQR rule:
+
+    IQR = Q3 - Q1
+    lower fence = Q1 - 1.5 * IQR
+    upper fence = Q3 + 1.5 * IQR
+
+An observation below the lower fence or above the upper fence was flagged as
+an outlier.
+
+The analysis was applied to:
+    - optimization time,
+    - number of subtours eliminated, and
+    - optimal objective value.
+
+Only runs with proven optimality contribute to these distributions because
+the Step 4 analysis-ready columns contain values only for Status == "OK".
+
+TIMEOUT and ERROR observations are not classified as statistical outliers.
+They are separate computational outcomes and should be reported separately.
+
+Outliers are NOT removed from the principal analysis. Their number and
+percentage are reported to characterize distributional heterogeneity. Any
+analysis excluding them should be described explicitly as a secondary
+robustness analysis rather than as the primary result.

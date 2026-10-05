@@ -1,0 +1,7 @@
+Family,Metric,N_instances_available,N_complete_pairs,N_excluded_incomplete
+r sensitivity (s=3),Time,100,100,0
+r sensitivity (s=3),Subtours,100,100,0
+r sensitivity (s=3),Quality,100,100,0
+s sensitivity (r=1),Time,100,100,0
+s sensitivity (r=1),Subtours,100,100,0
+s sensitivity (r=1),Quality,100,100,0

@@ -1,0 +1,10 @@
+Profile,SMF,L,Status,N
+Fast,2,32,OK,100
+Fast,2,62,OK,100
+Moderate,1,32,OK,100
+Moderate,1,62,OK,100
+Moderate,1,160,ERROR,1
+Moderate,1,160,OK,93
+Moderate,1,160,TIMEOUT,6
+Slow,0,32,OK,100
+Slow,0,43,OK,100

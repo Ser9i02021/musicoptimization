@@ -1,0 +1,49 @@
+Step 8 significance-testing protocol for candidate-set size L
+
+Tests are conducted separately within each lick-profile category.
+
+Slow:
+    L = 32 versus L = 43
+
+Moderate:
+    L = 32, 62, and 160
+
+Fast:
+    L = 32 versus L = 62
+
+Outcomes:
+    - optimization time
+    - number of subtours eliminated
+    - optimal objective value
+
+Because the samples at different L values are independently generated and
+the outcome distributions need not be normal, nonparametric tests are used.
+
+For profiles with two L levels:
+    two-sided Mann-Whitney U test
+
+For Moderate, which has three L levels:
+    Kruskal-Wallis omnibus test
+    followed by all three pairwise two-sided Mann-Whitney U tests
+
+The three Moderate pairwise p-values are corrected using Holm's family-wise
+error-rate procedure.
+
+Significance level:
+    alpha = 0.05
+
+Effect sizes:
+    - pairwise comparisons: rank-biserial correlation
+    - Kruskal-Wallis: epsilon-squared
+
+For rank-biserial correlation, a positive value indicates that values in L1
+tend to be larger than values in L2, and a negative value indicates that
+values in L1 tend to be smaller.
+
+Only runs with Status == "OK" contribute to optimization-time, subtour, and
+objective-value tests. TIMEOUT and ERROR observations are counted separately
+in L_status_counts.csv.
+
+Therefore, if timeouts occur, runtime comparisons describe the distribution
+of time-to-proven-optimality among successfully solved instances rather than
+the complete censored runtime distribution.

@@ -141,6 +141,8 @@ def optimize(
     max_total_time=300,
     max_cut_rounds=1000,
     verbose=False,
+    r=1,
+    s=3,
 ):
     """
     Solve the lick-sequencing MILP with iterative subtour elimination.
@@ -184,6 +186,21 @@ def optimize(
     # Every entry in licks_list is an ACTUAL candidate lick.  The source
     # and sink below are genuine dummy boundary nodes and therefore do not
     # correspond to MusicXML files, durations, or transition-cost entries.
+    # r : int, optional
+    #    Maximum number of selected repetition licks (C1).
+    #    Default: 1.
+    #
+    # s : int, optional
+    #    Maximum number of selected pause-related licks (C2-C7).
+    #    Default: 3.
+
+
+    if not isinstance(r, int) or isinstance(r, bool) or r < 0:
+        raise ValueError("r must be a non-negative integer.")
+
+    if not isinstance(s, int) or isinstance(s, bool) or s < 0:
+        raise ValueError("s must be a non-negative integer.")
+
     actual_nodes = list(range(len(licks_list)))
 
     if not actual_nodes:
@@ -234,9 +251,7 @@ def optimize(
     # Duration of each ACTUAL lick, in bars.
     c = [lick[3] for lick in licks_list]
 
-    # Constraints (5) and (6)
-    r = 1
-    s = 3
+    
 
     # Model
     model = LpProblem("Integer_Programming_Model", LpMinimize)

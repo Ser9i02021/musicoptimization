@@ -1,0 +1,52 @@
+Step 9 paired significance-testing protocol for r and s
+
+The sensitivity experiment evaluates the same candidate instances repeatedly
+under different parameter settings. Statistical comparisons are therefore
+paired rather than independent.
+
+r sensitivity:
+    s = 3 fixed
+    r = 1, 2, 3
+
+s sensitivity:
+    r = 1 fixed
+    s = 3, 4, 5
+
+Outcomes:
+    - optimization time
+    - number of subtours eliminated
+    - optimal objective value
+
+For each family and outcome, only instances with a proven-optimal value under
+all three compared settings are retained. Thus, the Friedman and pairwise
+Wilcoxon tests use the same complete paired sample.
+
+Omnibus test:
+    Friedman test
+
+Pairwise post-hoc tests:
+    two-sided Wilcoxon signed-rank tests for all three pairs
+
+Multiplicity correction:
+    Holm family-wise error-rate correction applied separately within each
+    family and outcome.
+
+Significance level:
+    alpha = 0.05
+
+Effect sizes:
+    - Friedman: Kendall's W
+    - Wilcoxon: matched-pairs rank-biserial correlation
+
+For pairwise results, delta is defined as:
+    setting 2 minus setting 1
+
+Accordingly, for objective value, a negative delta means that setting 2
+produced a lower (better) objective value. For runtime, a negative delta
+means that setting 2 was faster.
+
+TIMEOUT and ERROR outcomes are not converted to artificial numeric values.
+They are reported separately in rs_status_counts.csv. If such outcomes cause
+an instance to lack a proven-optimal value under one of the three settings,
+that instance is excluded from the complete-case inferential test for that
+family/outcome and the exclusion count is reported explicitly.

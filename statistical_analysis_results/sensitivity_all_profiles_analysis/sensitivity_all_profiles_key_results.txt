@@ -1,0 +1,94 @@
+ALL-PROFILE r/s SENSITIVITY REANALYSIS
+============================================================
+Input rows: 1500
+Profiles: ['Fast', 'Moderate', 'Slow']
+All statuses: {'OK': 1500}
+
+FRIEDMAN OMNIBUS TESTS
+ Profile  L              Family   Metric  N_complete_pairs  Friedman_chi2            p  Kendalls_W Significant_0.05
+    Fast 62 r sensitivity (s=3)     Time               100       9.920000 7.012928e-03    0.049600              Yes
+    Fast 62 r sensitivity (s=3) Subtours               100      12.373737 2.056255e-03    0.061869              Yes
+    Fast 62 r sensitivity (s=3)  Quality               100     159.714286 2.082013e-35    0.798571              Yes
+    Fast 62 s sensitivity (r=1)     Time               100       0.380000 8.269591e-01    0.001900               No
+    Fast 62 s sensitivity (r=1) Subtours               100       2.011696 3.657344e-01    0.010058               No
+    Fast 62 s sensitivity (r=1)  Quality               100      37.379310 7.641628e-09    0.186897              Yes
+Moderate 62 r sensitivity (s=3)     Time               100      15.920000 3.491531e-04    0.079600              Yes
+Moderate 62 r sensitivity (s=3) Subtours               100       1.027027 5.983894e-01    0.005135               No
+Moderate 62 r sensitivity (s=3)  Quality               100     198.000000 1.011221e-43    0.990000              Yes
+Moderate 62 s sensitivity (r=1)     Time               100       1.140000 5.655254e-01    0.005700               No
+Moderate 62 s sensitivity (r=1) Subtours               100       0.060811 9.700522e-01    0.000304               No
+Moderate 62 s sensitivity (r=1)  Quality               100      69.633588 7.572836e-16    0.348168              Yes
+    Slow 43 r sensitivity (s=3)     Time               100       2.480000 2.893842e-01    0.012400               No
+    Slow 43 r sensitivity (s=3) Subtours               100       9.245552 9.825485e-03    0.046228              Yes
+    Slow 43 r sensitivity (s=3)  Quality               100     190.976378 3.388492e-42    0.954882              Yes
+    Slow 43 s sensitivity (r=1)     Time               100      18.000000 1.234098e-04    0.090000              Yes
+    Slow 43 s sensitivity (r=1) Subtours               100       0.077348 9.620643e-01    0.000387               No
+    Slow 43 s sensitivity (r=1)  Quality               100      43.052632 4.479606e-10    0.215263              Yes
+
+PAIRWISE WILCOXON TESTS
+ Profile  L              Family   Metric Setting1 Setting2  N_pairs  Median_delta_2_minus_1  Mean_delta_2_minus_1        p_raw       p_Holm  Rank_biserial_2_minus_1 Significant_0.05
+    Fast 62 r sensitivity (s=3)     Time  r=1,s=3  r=2,s=3      100                0.125864              0.732876 5.189855e-05 1.556957e-04                 0.466139              Yes
+    Fast 62 r sensitivity (s=3)     Time  r=1,s=3  r=3,s=3      100                0.046206              0.633203 1.073413e-02 2.146826e-02                 0.293861              Yes
+    Fast 62 r sensitivity (s=3)     Time  r=2,s=3  r=3,s=3      100               -0.001972             -0.099673 1.487119e-01 1.487119e-01                -0.166337               No
+    Fast 62 r sensitivity (s=3) Subtours  r=1,s=3  r=2,s=3      100                0.000000              1.120000 1.359199e-04 4.077596e-04                 0.583117              Yes
+    Fast 62 r sensitivity (s=3) Subtours  r=1,s=3  r=3,s=3      100                0.000000              0.990000 7.455207e-04 1.491041e-03                 0.546939              Yes
+    Fast 62 r sensitivity (s=3) Subtours  r=2,s=3  r=3,s=3      100                0.000000             -0.130000 3.462914e-01 3.462914e-01                -0.185606               No
+    Fast 62 r sensitivity (s=3)  Quality  r=1,s=3  r=2,s=3      100              -35.000000            -29.650000 1.003354e-16 3.010061e-16                -1.000000              Yes
+    Fast 62 r sensitivity (s=3)  Quality  r=1,s=3  r=3,s=3      100              -47.500000            -45.700000 6.413989e-16 1.282798e-15                -1.000000              Yes
+    Fast 62 r sensitivity (s=3)  Quality  r=2,s=3  r=3,s=3      100                0.000000            -16.050000 5.659075e-09 5.659075e-09                -1.000000              Yes
+    Fast 62 s sensitivity (r=1)     Time  r=1,s=3  r=1,s=4      100                0.000877             -0.051753 7.859083e-01 8.381739e-01                -0.031287               No
+    Fast 62 s sensitivity (r=1)     Time  r=1,s=3  r=1,s=5      100                0.002460              0.058789 4.190869e-01 8.381739e-01                 0.093069               No
+    Fast 62 s sensitivity (r=1)     Time  r=1,s=4  r=1,s=5      100                0.002467              0.110542 2.288163e-01 6.864488e-01                 0.138614               No
+    Fast 62 s sensitivity (r=1) Subtours  r=1,s=3  r=1,s=4      100                0.000000             -0.180000 5.102091e-01 1.000000e+00                -0.112051               No
+    Fast 62 s sensitivity (r=1) Subtours  r=1,s=3  r=1,s=5      100                0.000000             -0.040000 5.581414e-01 1.000000e+00                 0.099366               No
+    Fast 62 s sensitivity (r=1) Subtours  r=1,s=4  r=1,s=5      100                0.000000              0.140000 1.344880e-01 4.034641e-01                 0.292339               No
+    Fast 62 s sensitivity (r=1)  Quality  r=1,s=3  r=1,s=4      100                0.000000             -3.500000 5.957631e-05 1.787289e-04                -1.000000              Yes
+    Fast 62 s sensitivity (r=1)  Quality  r=1,s=3  r=1,s=5      100                0.000000             -3.650000 5.968956e-05 1.787289e-04                -1.000000              Yes
+    Fast 62 s sensitivity (r=1)  Quality  r=1,s=4  r=1,s=5      100                0.000000             -0.150000 3.173105e-01 3.173105e-01                -1.000000               No
+Moderate 62 r sensitivity (s=3)     Time  r=1,s=3  r=2,s=3      100               -0.210155             -2.089979 1.938409e-02 3.876818e-02                -0.269307              Yes
+Moderate 62 r sensitivity (s=3)     Time  r=1,s=3  r=3,s=3      100               -0.295139             -2.362654 1.734343e-03 5.203030e-03                -0.360792              Yes
+Moderate 62 r sensitivity (s=3)     Time  r=2,s=3  r=3,s=3      100               -0.091579             -0.272674 2.209358e-01 2.209358e-01                -0.140990               No
+Moderate 62 r sensitivity (s=3) Subtours  r=1,s=3  r=2,s=3      100                0.000000             -2.110000 8.431246e-01 1.000000e+00                -0.025641               No
+Moderate 62 r sensitivity (s=3) Subtours  r=1,s=3  r=3,s=3      100                0.000000             -2.450000 3.561384e-01 1.000000e+00                -0.117133               No
+Moderate 62 r sensitivity (s=3) Subtours  r=2,s=3  r=3,s=3      100                0.000000             -0.340000 5.641170e-01 1.000000e+00                -0.073765               No
+Moderate 62 r sensitivity (s=3)  Quality  r=1,s=3  r=2,s=3      100              -50.000000            -52.450000 7.398090e-20 2.219427e-19                -1.000000              Yes
+Moderate 62 r sensitivity (s=3)  Quality  r=1,s=3  r=3,s=3      100             -100.000000            -98.300000 6.725727e-19 6.725727e-19                -1.000000              Yes
+Moderate 62 r sensitivity (s=3)  Quality  r=2,s=3  r=3,s=3      100              -50.000000            -45.850000 8.154902e-20 2.219427e-19                -1.000000              Yes
+Moderate 62 s sensitivity (r=1)     Time  r=1,s=3  r=1,s=4      100                0.024379             -1.103732 9.151158e-01 1.000000e+00                -0.012277               No
+Moderate 62 s sensitivity (r=1)     Time  r=1,s=3  r=1,s=5      100                0.002106             -0.875554 8.178060e-01 1.000000e+00                -0.026535               No
+Moderate 62 s sensitivity (r=1)     Time  r=1,s=4  r=1,s=5      100               -0.000693              0.228178 8.554013e-01 1.000000e+00                 0.020990               No
+Moderate 62 s sensitivity (r=1) Subtours  r=1,s=3  r=1,s=4      100                0.000000             -1.430000 5.665631e-01 1.000000e+00                -0.076865               No
+Moderate 62 s sensitivity (r=1) Subtours  r=1,s=3  r=1,s=5      100                0.000000             -1.100000 9.632930e-01 1.000000e+00                 0.006260               No
+Moderate 62 s sensitivity (r=1) Subtours  r=1,s=4  r=1,s=5      100                0.000000              0.330000 4.827914e-01 1.000000e+00                 0.096480               No
+Moderate 62 s sensitivity (r=1)  Quality  r=1,s=3  r=1,s=4      100                0.000000             -5.450000 2.636161e-08 5.272321e-08                -1.000000              Yes
+Moderate 62 s sensitivity (r=1)  Quality  r=1,s=3  r=1,s=5      100                0.000000             -7.950000 5.876835e-09 1.763050e-08                -1.000000              Yes
+Moderate 62 s sensitivity (r=1)  Quality  r=1,s=4  r=1,s=5      100                0.000000             -2.500000 2.901871e-04 2.901871e-04                -1.000000              Yes
+    Slow 43 r sensitivity (s=3)     Time  r=1,s=3  r=2,s=3      100                0.001650             -0.040220 7.027180e-01 7.027180e-01                -0.043960               No
+    Slow 43 r sensitivity (s=3)     Time  r=1,s=3  r=3,s=3      100               -0.054168             -0.093825 1.817031e-02 5.451093e-02                -0.272079               No
+    Slow 43 r sensitivity (s=3)     Time  r=2,s=3  r=3,s=3      100               -0.000190             -0.053606 2.911667e-01 5.823333e-01                -0.121584               No
+    Slow 43 r sensitivity (s=3) Subtours  r=1,s=3  r=2,s=3      100                0.000000             -0.340000 7.221688e-02 1.444338e-01                -0.240487               No
+    Slow 43 r sensitivity (s=3) Subtours  r=1,s=3  r=3,s=3      100                0.000000             -0.610000 2.001708e-03 6.005124e-03                -0.423602              Yes
+    Slow 43 r sensitivity (s=3) Subtours  r=2,s=3  r=3,s=3      100                0.000000             -0.270000 1.675412e-01 1.675412e-01                -0.209273               No
+    Slow 43 r sensitivity (s=3)  Quality  r=1,s=3  r=2,s=3      100              -75.000000            -77.500000 5.846311e-18 1.753893e-17                -1.000000              Yes
+    Slow 43 r sensitivity (s=3)  Quality  r=1,s=3  r=3,s=3      100             -110.000000           -121.700000 7.066089e-18 1.753893e-17                -1.000000              Yes
+    Slow 43 r sensitivity (s=3)  Quality  r=2,s=3  r=3,s=3      100              -35.000000            -44.200000 2.268204e-16 2.268204e-16                -1.000000              Yes
+    Slow 43 s sensitivity (r=1)     Time  r=1,s=3  r=1,s=4      100                0.004493             -0.030505 2.069973e-01 2.069973e-01                 0.145347               No
+    Slow 43 s sensitivity (r=1)     Time  r=1,s=3  r=1,s=5      100                0.007012              0.025320 3.476101e-02 1.042830e-01                 0.243168               No
+    Slow 43 s sensitivity (r=1)     Time  r=1,s=4  r=1,s=5      100                0.001943              0.055824 4.538107e-02 1.042830e-01                 0.230495               No
+    Slow 43 s sensitivity (r=1) Subtours  r=1,s=3  r=1,s=4      100                0.000000             -0.220000 9.828043e-01 1.000000e+00                 0.003546               No
+    Slow 43 s sensitivity (r=1) Subtours  r=1,s=3  r=1,s=5      100                0.000000             -0.140000 9.092971e-01 1.000000e+00                 0.019934               No
+    Slow 43 s sensitivity (r=1) Subtours  r=1,s=4  r=1,s=5      100                0.000000              0.080000 5.253706e-01 1.000000e+00                 0.116059               No
+    Slow 43 s sensitivity (r=1)  Quality  r=1,s=3  r=1,s=4      100                0.000000            -18.800000 2.537819e-05 7.613458e-05                -1.000000              Yes
+    Slow 43 s sensitivity (r=1)  Quality  r=1,s=3  r=1,s=5      100                0.000000            -21.000000 2.559930e-05 7.613458e-05                -1.000000              Yes
+    Slow 43 s sensitivity (r=1)  Quality  r=1,s=4  r=1,s=5      100                0.000000             -2.200000 1.635122e-02 1.635122e-02                -1.000000              Yes
+
+NORMALITY SUMMARY
+Shapiro tests: 45; rejected at 0.05: 45
+
+OUTLIER SUMMARY
+Configuration-outcome combinations: 45
+Combinations with >=1 outlier: 42
+Total flagged observations across combinations: 321
+
+CENSORING SUMMARY
+Timeouts: 0; Errors: 0

@@ -25,7 +25,7 @@ NUM_RUNS = 100
 OPTIMIZE_PARAMETER = 12
 
 # Maximum cumulative time used by optimize() for one sampled instance.
-MAX_TOTAL_TIME = 300
+MAX_TOTAL_TIME = 1800
 MAX_CUT_ROUNDS = 1000
 
 # For the full experiment, keep this False to avoid large console output.
@@ -46,7 +46,7 @@ RETRY_FAILED = False
 # 0 = Slow
 # 1 = Moderate
 # 2 = Fast
-
+'''
 EXPERIMENTS = [
     ("Slow",     0, [32, 43]),
     ("Moderate", 1, [32, 62, 160]),
@@ -56,10 +56,10 @@ EXPERIMENTS = [
 EXPERIMENTS = [
     ("Moderate", 1, [160]),
 ]
-'''
+
 BASE_SEED = 20260910
 
-OUTPUT_DIR = Path("experiment_final")
+OUTPUT_DIR = Path("experiment_final_160")
 RUNS_DIR = OUTPUT_DIR / "runs"
 
 # ============================================================

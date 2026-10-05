@@ -1,0 +1,139 @@
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 1.0 Partwise//EN" "/musicxml/partwise.dtd">
+<score-partwise>
+	<work/>
+	<identification><encoding><software>Guitar Pro 5</software>
+			<encoding-description>MusicXML 1.0</encoding-description>
+		</encoding>
+		<miscellaneous/>
+	</identification>
+	<part-list><score-part id="P1"><part-name>Pista 1</part-name>
+			<score-instrument id="P1-I1"><instrument-name/>
+			</score-instrument>
+			<midi-instrument id="P1-I1"><midi-channel>1</midi-channel>
+				<midi-program>25</midi-program>
+			</midi-instrument>
+		</score-part>
+	</part-list>
+	<part id="P1">
+		
+	<measure number="3">
+			<attributes><divisions>4</divisions>
+			</attributes>
+			<note><rest/>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+			</note>
+			<note><pitch><step>F</step>
+					<alter>1</alter>
+					<octave>4</octave>
+				</pitch>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>5</string>
+						<fret>9</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>G</step>
+					<octave>4</octave>
+				</pitch>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>5</string>
+						<fret>10</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>A</step>
+					<alter>1</alter>
+					<octave>4</octave>
+				</pitch>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>4</string>
+						<fret>8</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>G</step>
+					<octave>4</octave>
+				</pitch>
+				<duration>1</duration>
+				<voice>1</voice>
+				<type>16th</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>5</string>
+						<fret>10</fret>
+						<pull-off type="start">P</pull-off>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>F</step>
+					<octave>4</octave>
+				</pitch>
+				<duration>1</duration>
+				<voice>1</voice>
+				<type>16th</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>5</string>
+						<fret>8</fret>
+						<pull-off type="stop"/>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>D</step>
+					<alter>1</alter>
+					<octave>4</octave>
+				</pitch>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>6</string>
+						<fret>11</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>F</step>
+					<octave>4</octave>
+				</pitch>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>5</string>
+						<fret>8</fret>
+					</technical>
+				</notations>
+			</note>
+			<note><pitch><step>D</step>
+					<alter>1</alter>
+					<octave>4</octave>
+				</pitch>
+				<duration>2</duration>
+				<voice>1</voice>
+				<type>eighth</type>
+				<notations><dynamics><f/>
+					</dynamics>
+					<technical><string>6</string>
+						<fret>11</fret>
+					</technical>
+				</notations>
+			</note>
+		</measure>
+		</part>
+</score-partwise>
