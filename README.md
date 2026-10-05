@@ -1,4 +1,4 @@
-text = """# MILP-Based Lick Sequencing for 12-Bar Blues Guitar Solos
+MILP-Based Lick Sequencing for 12-Bar Blues Guitar Solos
 
 This repository contains the implementation, computational experiments, and
 statistical-analysis workflow for a mixed-integer linear programming (MILP)
@@ -1313,8 +1313,3 @@ Scalability Study**
 
 The code, run-level experimental results, and statistical-analysis workflow are
 provided to support computational reproducibility.
-"""
-path = "/mnt/data/README_new.txt"
-with open(path, "w", encoding="utf-8") as f:
-    f.write(text)
-print(f"Created {path} with {len(text.splitlines())} lines.")
